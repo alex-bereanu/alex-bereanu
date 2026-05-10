@@ -1,0 +1,198 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum GalleryCategory {
+  PORTRAITS
+  AUTOMOTIVE
+  LANDSCAPES
+  WEDDINGS
+  PRODUCT
+  CORPORATE
+  CUSTOM
+}
+
+enum GalleryVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum TicketType {
+  BOOKING
+  CONTACT
+}
+
+enum TicketSource {
+  HOMEPAGE_BOOKINGS
+  HOMEPAGE_CONTACT
+}
+
+enum TicketStatus {
+  NEW
+  IN_PROGRESS
+  RESPONDED
+  CLOSED
+}
+
+enum ActorType {
+  ADMIN
+  VISITOR
+  SYSTEM
+}
+
+model AdminUser {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Gallery {
+  id                String            @id @default(cuid())
+  title             String
+  slug              String            @unique
+  description       String?
+  category          GalleryCategory
+  visibility        GalleryVisibility @default(PUBLIC)
+  isActive          Boolean           @default(true)
+  archiveObjectKey  String?
+  archiveFilename   String?
+  archiveUploadedAt DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  assets     GalleryAsset[]
+  shareLinks GalleryShareLink[]
+
+  @@index([category, isActive])
+}
+
+model GalleryAsset {
+  id               String    @id @default(cuid())
+  galleryId        String
+  storageKey       String    @unique
+  smallStorageKey  String?   @unique
+  smallWidth       Int?
+  smallHeight      Int?
+  smallSizeBytes   BigInt?
+  mediumStorageKey String?   @unique
+  mediumWidth      Int?
+  mediumHeight     Int?
+  mediumSizeBytes  BigInt?
+  originalFilename String
+  mimeType         String
+  fileExtension    String?
+  sizeBytes        BigInt
+  width            Int?
+  height           Int?
+  capturedAt       DateTime?
+  sortOrder        Int       @default(0)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  gallery Gallery @relation(fields: [galleryId], references: [id], onDelete: Cascade)
+
+  @@index([galleryId, sortOrder])
+}
+
+model GalleryShareLink {
+  id             String    @id @default(cuid())
+  galleryId      String
+  slug           String    @unique
+  passwordHash   String?
+  recipientEmail String?
+  expiresAt      DateTime?
+  maxDownloads   Int?
+  downloadCount  Int       @default(0)
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  gallery Gallery @relation(fields: [galleryId], references: [id], onDelete: Cascade)
+
+  @@index([galleryId, isActive])
+}
+
+model Ticket {
+  id              String       @id @default(cuid())
+  type            TicketType
+  source          TicketSource
+  status          TicketStatus @default(NEW)
+  firstName       String
+  lastName        String
+  email           String
+  telephone       String?
+  whatsapp        String?
+  message         String?
+  eventDate       DateTime?
+  eventType       String?
+  eventDuration   String?
+  guestCount      Int?
+  additionalNotes String?
+  metadata        Json?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  messages TicketMessage[]
+
+  @@index([type, status, createdAt])
+  @@index([email, createdAt])
+}
+
+model TicketMessage {
+  id           String    @id @default(cuid())
+  ticketId     String
+  actorType    ActorType
+  actorLabel   String?
+  emailTo      String?
+  emailSubject String?
+  bodyText     String?
+  bodyHtml     String?
+  createdAt    DateTime  @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+}
+
+model EmailLog {
+  id                String   @id @default(cuid())
+  provider          String   @default("resend")
+  templateKey       String
+  toEmail           String
+  subject           String
+  providerMessageId String?
+  status            String
+  errorMessage      String?
+  metadata          Json?
+  createdAt         DateTime @default(now())
+
+  @@index([toEmail, createdAt])
+}
+
+model SiteContent {
+  key                  String   @id
+  title                String?
+  subtitle             String?
+  body                 String?
+  ctaTitle             String?
+  ctaBody              String?
+  imageObjectKey       String?
+  imageSmallObjectKey  String?
+  imageSmallWidth      Int?
+  imageSmallHeight     Int?
+  imageSmallSizeBytes  BigInt?
+  imageMediumObjectKey String?
+  imageMediumWidth     Int?
+  imageMediumHeight    Int?
+  imageMediumSizeBytes BigInt?
+  imageAlt             String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
