@@ -4,6 +4,8 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { resetTurnstileInForm, TurnstileField } from "@/components/turnstile-field";
+
 type FormState =
   | { status: "idle" }
   | { status: "submitting" }
@@ -40,7 +42,12 @@ function getSetupErrorMessage(payload: unknown): string {
   return "Unable to create admin account. Please try again.";
 }
 
-export function AdminSetupForm() {
+type AdminSetupFormProps = {
+  csrfToken: string;
+  turnstileSiteKey?: string;
+};
+
+export function AdminSetupForm({ csrfToken, turnstileSiteKey }: AdminSetupFormProps) {
   const router = useRouter();
   const [state, setState] = useState<FormState>({ status: "idle" });
 
@@ -61,12 +68,15 @@ export function AdminSetupForm() {
           username: String(formData.get("username") ?? ""),
           password: String(formData.get("password") ?? ""),
           confirmPassword: String(formData.get("confirmPassword") ?? ""),
+          csrfToken,
+          turnstileToken: String(formData.get("cf-turnstile-response") ?? ""),
         }),
       });
 
       const responsePayload = (await response.json().catch(() => null)) as unknown;
 
       if (!response.ok) {
+        resetTurnstileInForm(form);
         setState({
           status: "error",
           message: getSetupErrorMessage(responsePayload),
@@ -76,8 +86,10 @@ export function AdminSetupForm() {
       }
 
       form.reset();
+      resetTurnstileInForm(form);
       router.replace("/admin");
     } catch {
+      resetTurnstileInForm(form);
       setState({
         status: "error",
         message: "Unable to create admin account right now. Please try again in a moment.",
@@ -117,6 +129,7 @@ export function AdminSetupForm() {
           maxLength={128}
           required
         />
+        <TurnstileField siteKey={turnstileSiteKey} />
 
         <button
           className="rounded bg-black px-4 py-2 text-white disabled:cursor-not-allowed disabled:opacity-60"

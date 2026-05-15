@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { getGalleryAccessCookieName, verifyGalleryAccessToken } from "@/server/auth/gallery-access";
 
 export type ResolvedGalleryAccess = {
+  shareLinkId: string;
   galleryId: string;
   galleryTitle: string;
   slug: string;
@@ -20,6 +21,7 @@ export async function resolveGalleryAccessBySlug(slug: string): Promise<Resolved
   const shareLink = await prisma.galleryShareLink.findUnique({
     where: { slug },
     select: {
+      id: true,
       slug: true,
       isActive: true,
       expiresAt: true,
@@ -58,10 +60,32 @@ export async function resolveGalleryAccessBySlug(slug: string): Promise<Resolved
   }
 
   return {
+    shareLinkId: shareLink.id,
     galleryId: shareLink.gallery.id,
     galleryTitle: shareLink.gallery.title,
     slug: shareLink.slug,
     archiveObjectKey: shareLink.gallery.archiveObjectKey,
     archiveFilename: shareLink.gallery.archiveFilename,
   };
+}
+
+export async function recordGalleryShareLinkDownload(shareLinkId: string): Promise<boolean> {
+  if (!env.DATABASE_URL) {
+    return false;
+  }
+
+  const updatedRows = await prisma.$queryRaw<Array<{ id: string }>>`
+    UPDATE "GalleryShareLink"
+    SET
+      "downloadCount" = "downloadCount" + 1,
+      "updatedAt" = CURRENT_TIMESTAMP
+    WHERE
+      "id" = ${shareLinkId}
+      AND "isActive" = true
+      AND ("expiresAt" IS NULL OR "expiresAt" > CURRENT_TIMESTAMP)
+      AND ("maxDownloads" IS NULL OR "downloadCount" < "maxDownloads")
+    RETURNING "id"
+  `;
+
+  return updatedRows.length > 0;
 }

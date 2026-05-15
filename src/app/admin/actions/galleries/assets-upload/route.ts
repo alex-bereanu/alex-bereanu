@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { formatBytes } from "@/lib/upload-limits";
 import { uploadObject } from "@/server/services/storage";
 import { requireAdminRequestSession } from "@/server/auth/admin-guard";
+import { verifyMutationProtection } from "@/server/security/request-protection";
 import {
   MAX_GALLERY_ASSET_SIZE_BYTES,
   validateImageFileSignature,
@@ -30,6 +31,12 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   try {
     const formData = await request.formData();
+    const securityError = verifyMutationProtection(request, String(formData.get("csrfToken") ?? ""));
+
+    if (securityError) {
+      return securityError;
+    }
+
     const file = formData.get("file");
 
     if (!(file instanceof File) || file.size <= 0) {

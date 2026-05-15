@@ -4,6 +4,7 @@ import { z } from "zod";
 import { env } from "@/config/env";
 import { prisma } from "@/lib/db";
 import { requireAdminRequestSession } from "@/server/auth/admin-guard";
+import { verifyMutationProtection } from "@/server/security/request-protection";
 
 const requestSchema = z.object({
   galleryId: z.string().trim().min(1),
@@ -23,6 +24,12 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   try {
     const body = await request.json();
+    const securityError = verifyMutationProtection(request, typeof body?.csrfToken === "string" ? body.csrfToken : null);
+
+    if (securityError) {
+      return securityError;
+    }
+
     const parsed = requestSchema.parse(body);
 
     const updated = await prisma.gallery.update({

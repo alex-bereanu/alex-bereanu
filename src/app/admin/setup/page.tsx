@@ -4,6 +4,7 @@ import { env } from "@/config/env";
 import { AdminSetupForm } from "@/components/admin-setup-form";
 import { prisma } from "@/lib/db";
 import { isAdminSessionConfigured } from "@/server/auth/admin-session";
+import { createCsrfToken } from "@/server/security/request-protection";
 
 export const dynamic = "force-dynamic";
 
@@ -53,7 +54,7 @@ export default async function AdminSetupPage() {
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-lg flex-col justify-center px-4 py-10">
-      <AdminSetupForm />
+      <AdminSetupForm csrfToken={createCsrfToken()} turnstileSiteKey={env.NEXT_PUBLIC_TURNSTILE_SITE_KEY} />
     </main>
   );
 }

@@ -2,12 +2,16 @@
 
 import { FormEvent, useState } from "react";
 
+import { resetTurnstileInForm, TurnstileField } from "@/components/turnstile-field";
+
 type ContactPayload = {
   firstName: string;
   lastName: string;
   email: string;
   telephone: string;
   message: string;
+  csrfToken: string;
+  turnstileToken?: string;
 };
 
 type FormState =
@@ -60,7 +64,12 @@ function getContactErrorMessage(payload: unknown): string {
   return "Unable to send message. Please try again.";
 }
 
-export function ContactForm() {
+type ContactFormProps = {
+  csrfToken: string;
+  turnstileSiteKey?: string;
+};
+
+export function ContactForm({ csrfToken, turnstileSiteKey }: ContactFormProps) {
   const [state, setState] = useState<FormState>(initialState);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -77,6 +86,8 @@ export function ContactForm() {
       email: String(formData.get("email") ?? ""),
       telephone: String(formData.get("telephone") ?? ""),
       message: String(formData.get("message") ?? ""),
+      csrfToken,
+      turnstileToken: String(formData.get("cf-turnstile-response") ?? ""),
     };
 
     try {
@@ -90,6 +101,7 @@ export function ContactForm() {
       const responsePayload = (await response.json().catch(() => null)) as unknown;
 
       if (!response.ok) {
+        resetTurnstileInForm(form);
         setState({
           status: "error",
           message: getContactErrorMessage(responsePayload),
@@ -105,7 +117,9 @@ export function ContactForm() {
         message: `Thank you, ${firstName}! Your message is on its way. I'll get back to you soon.`,
       });
       form.reset();
+      resetTurnstileInForm(form);
     } catch {
+      resetTurnstileInForm(form);
       setState({
         status: "error",
         message: "Unable to send message right now. Please try again in a moment.",
@@ -127,6 +141,7 @@ export function ContactForm() {
         minLength={5}
         required
       />
+      <TurnstileField className="sm:col-span-2" siteKey={turnstileSiteKey} />
 
       <button
         className="editorial-button justify-self-center rounded px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-60 sm:col-span-2"

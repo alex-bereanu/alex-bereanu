@@ -1,7 +1,9 @@
 import { Suspense } from "react";
 
 import { AdminLoginForm } from "@/components/admin-login-form";
+import { env } from "@/config/env";
 import { isAdminGoogleOAuthConfigured } from "@/server/auth/admin-google-oauth";
+import { createCsrfToken } from "@/server/security/request-protection";
 
 function LoginFallback() {
   return (
@@ -13,10 +15,16 @@ function LoginFallback() {
 }
 
 export default function AdminLoginPage() {
+  const csrfToken = createCsrfToken();
+
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-lg flex-col justify-center px-4 py-10">
       <Suspense fallback={<LoginFallback />}>
-        <AdminLoginForm googleOAuthEnabled={isAdminGoogleOAuthConfigured()} />
+        <AdminLoginForm
+          csrfToken={csrfToken}
+          googleOAuthEnabled={isAdminGoogleOAuthConfigured()}
+          turnstileSiteKey={env.NEXT_PUBLIC_TURNSTILE_SITE_KEY}
+        />
       </Suspense>
     </main>
   );

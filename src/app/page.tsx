@@ -4,9 +4,11 @@ import Image from "next/image";
 import { ContactForm } from "@/components/contact-form";
 import { HomepageHeroMosaic } from "@/components/homepage-hero-mosaic";
 import { SiteFooter } from "@/components/site-footer";
+import { env } from "@/config/env";
 import { headerCategoryLinks } from "@/lib/site-data";
 import { getPublicHomepageMosaicPhotos } from "@/server/services/public-gallery";
 import { getSiteContent } from "@/server/services/site-content";
+import { createCsrfToken } from "@/server/security/request-protection";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +20,7 @@ export default async function Home() {
     getSiteContent("home.about"),
     getSiteContent("home.contact"),
   ]);
+  const csrfToken = createCsrfToken();
 
   return (
     <div className="w-full">
@@ -67,7 +70,7 @@ export default async function Home() {
         <section id="contact" className="scroll-mt-28 space-y-5">
           <h2 className="editorial-heading text-4xl">{contactContent.title}</h2>
           {contactContent.body ? <p className="text-sm text-neutral-700">{contactContent.body}</p> : null}
-          <ContactForm />
+          <ContactForm csrfToken={csrfToken} turnstileSiteKey={env.NEXT_PUBLIC_TURNSTILE_SITE_KEY} />
         </section>
 
         <SiteFooter

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createSignedDownloadUrl } from "@/server/services/storage";
-import { resolveGalleryAccessBySlug } from "@/server/services/gallery-access";
+import { recordGalleryShareLinkDownload, resolveGalleryAccessBySlug } from "@/server/services/gallery-access";
 
 type RouteProps = {
   params: Promise<{ slug: string }>;
@@ -13,6 +13,12 @@ export async function GET(_: Request, { params }: RouteProps): Promise<NextRespo
 
   if (!access || !access.archiveObjectKey) {
     return NextResponse.json({ error: "Archive not available." }, { status: 404 });
+  }
+
+  const downloadAllowed = await recordGalleryShareLinkDownload(access.shareLinkId);
+
+  if (!downloadAllowed) {
+    return NextResponse.json({ error: "Download limit reached for this gallery link." }, { status: 403 });
   }
 
   const signedUrl = await createSignedDownloadUrl({

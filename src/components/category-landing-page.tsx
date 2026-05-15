@@ -4,6 +4,7 @@ import Link from "next/link";
 import { env } from "@/config/env";
 import { headerCategoryLinks, type PortfolioCategory } from "@/lib/site-data";
 import { getPublicCategoryGalleriesBySlug, type GalleryPhoto } from "@/server/services/public-gallery";
+import { createCsrfToken } from "@/server/security/request-protection";
 import { getPortfolioContentKey, getSiteContent } from "@/server/services/site-content";
 
 import { BookingForm } from "./booking-form";
@@ -98,6 +99,8 @@ export async function CategoryLandingPage({
       }
     : heroPhoto;
   const missingPublicBase = !env.R2_PUBLIC_BASE_URL;
+  const csrfToken = createCsrfToken();
+  const turnstileSiteKey = env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
   const inquirySectionId = inquiryType === "booking" ? "bookings" : "contact";
   const inquiryLabel = inquiryType === "booking" ? "Bookings" : "Connect";
   const inquiryCtaLabel = inquiryType === "booking" ? "Book a Session" : "Connect";
@@ -195,7 +198,11 @@ export async function CategoryLandingPage({
           <section id={inquirySectionId} className="mx-auto w-full max-w-6xl space-y-5 px-4 sm:px-6 lg:px-8">
             <h2 className="editorial-heading text-4xl">{resolvedInquiryTitle}</h2>
             <p className="text-sm text-neutral-700">{resolvedInquiryDescription}</p>
-            {inquiryType === "booking" ? <BookingForm /> : <ContactForm />}
+            {inquiryType === "booking" ? (
+              <BookingForm csrfToken={csrfToken} turnstileSiteKey={turnstileSiteKey} />
+            ) : (
+              <ContactForm csrfToken={csrfToken} turnstileSiteKey={turnstileSiteKey} />
+            )}
           </section>
         </main>
 
@@ -311,7 +318,11 @@ export async function CategoryLandingPage({
         <section id={inquirySectionId} className="space-y-5">
           <h2 className="editorial-heading text-4xl">{resolvedInquiryTitle}</h2>
           <p className="text-sm text-neutral-700">{resolvedInquiryDescription}</p>
-          {inquiryType === "booking" ? <BookingForm /> : <ContactForm />}
+          {inquiryType === "booking" ? (
+            <BookingForm csrfToken={csrfToken} turnstileSiteKey={turnstileSiteKey} />
+          ) : (
+            <ContactForm csrfToken={csrfToken} turnstileSiteKey={turnstileSiteKey} />
+          )}
         </section>
       </main>
 

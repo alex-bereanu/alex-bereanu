@@ -5,13 +5,14 @@ import { env } from "@/config/env";
 import { prisma } from "@/lib/db";
 import { deleteObjectByKey } from "@/server/services/storage";
 import { requireAdminRequestSession } from "@/server/auth/admin-guard";
+import { verifyMutationProtection } from "@/server/security/request-protection";
 
 const deleteArchiveSchema = z.object({
   galleryId: z.string().trim().min(1),
 });
 
 function redirectToAdmin(request: Request, query: string): NextResponse {
-  const url = new URL(`/admin?${query}`, request.url);
+  const url = new URL(`/admin/galleries?view=expanded&${query}`, request.url);
   return NextResponse.redirect(url, 303);
 }
 
@@ -27,6 +28,12 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   try {
     const formData = await request.formData();
+    const securityError = verifyMutationProtection(request, String(formData.get("csrfToken") ?? ""));
+
+    if (securityError) {
+      return securityError;
+    }
+
     const parsed = deleteArchiveSchema.parse({
       galleryId: formData.get("galleryId"),
     });

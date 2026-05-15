@@ -5,6 +5,7 @@ import { env } from "@/config/env";
 import { prisma } from "@/lib/db";
 import { createSignedUploadUrl } from "@/server/services/storage";
 import { requireAdminRequestSession } from "@/server/auth/admin-guard";
+import { verifyMutationProtection } from "@/server/security/request-protection";
 import {
   MAX_ARCHIVE_SIZE_BYTES,
   sanitizeFilename,
@@ -30,6 +31,12 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   try {
     const body = await request.json();
+    const securityError = verifyMutationProtection(request, typeof body?.csrfToken === "string" ? body.csrfToken : null);
+
+    if (securityError) {
+      return securityError;
+    }
+
     const parsed = requestSchema.parse(body);
     const zipValidationError = validateZipUploadMetadata({
       filename: parsed.filename,

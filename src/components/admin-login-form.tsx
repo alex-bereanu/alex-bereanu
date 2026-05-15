@@ -4,13 +4,17 @@ import Link from "next/link";
 import { FormEvent, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+import { resetTurnstileInForm, TurnstileField } from "@/components/turnstile-field";
+
 type FormState =
   | { status: "idle" }
   | { status: "submitting" }
   | { status: "error"; message: string };
 
 type AdminLoginFormProps = {
+  csrfToken: string;
   googleOAuthEnabled?: boolean;
+  turnstileSiteKey?: string;
 };
 
 function getLoginErrorMessage(payload: unknown): string {
@@ -58,7 +62,7 @@ function getSafeAdminNextPath(value: string | null): string {
   return "/admin";
 }
 
-export function AdminLoginForm({ googleOAuthEnabled = false }: AdminLoginFormProps) {
+export function AdminLoginForm({ csrfToken, googleOAuthEnabled = false, turnstileSiteKey }: AdminLoginFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = useMemo(() => getSafeAdminNextPath(searchParams.get("next")), [searchParams]);
@@ -85,11 +89,14 @@ export function AdminLoginForm({ googleOAuthEnabled = false }: AdminLoginFormPro
         body: JSON.stringify({
           username: String(formData.get("username") ?? ""),
           password: String(formData.get("password") ?? ""),
+          csrfToken,
+          turnstileToken: String(formData.get("cf-turnstile-response") ?? ""),
         }),
       });
       const responsePayload = (await response.json().catch(() => null)) as unknown;
 
       if (!response.ok) {
+        resetTurnstileInForm(event.currentTarget);
         setState({
           status: "error",
           message: getLoginErrorMessage(responsePayload),
@@ -100,6 +107,7 @@ export function AdminLoginForm({ googleOAuthEnabled = false }: AdminLoginFormPro
 
       router.replace(nextPath);
     } catch {
+      resetTurnstileInForm(event.currentTarget);
       setState({
         status: "error",
         message: "Sign in failed. Please verify your credentials.",
@@ -132,6 +140,7 @@ export function AdminLoginForm({ googleOAuthEnabled = false }: AdminLoginFormPro
       <form className="mt-6 grid gap-3" onSubmit={handleSubmit}>
         <input className="rounded border px-3 py-2" name="username" placeholder="Username" required />
         <input className="rounded border px-3 py-2" name="password" type="password" placeholder="Password" required />
+        <TurnstileField siteKey={turnstileSiteKey} />
 
         <button
           className="rounded bg-black px-4 py-2 text-white disabled:cursor-not-allowed disabled:opacity-60"

@@ -11,7 +11,9 @@ import {
   isAdminSessionConfigured,
 } from "@/server/auth/admin-session";
 import { getSecureCookieOptions } from "@/server/auth/cookies";
+import { verifyMutationProtection } from "@/server/security/request-protection";
 import { checkRateLimit, getClientIp, rateLimitJsonResponse } from "@/server/security/rate-limit";
+import { verifyTurnstileToken } from "@/server/security/turnstile";
 
 const setupSchema = z
   .object({
@@ -38,7 +40,7 @@ const setupSchema = z
   });
 
 export async function POST(request: Request): Promise<NextResponse> {
-  const setupRateLimit = checkRateLimit({
+  const setupRateLimit = await checkRateLimit({
     key: `admin-setup:${getClientIp(request)}`,
     limit: 5,
     windowMs: 60 * 60 * 1000,
@@ -58,6 +60,21 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   try {
     const body = await request.json();
+    const securityError = verifyMutationProtection(request, typeof body?.csrfToken === "string" ? body.csrfToken : null);
+
+    if (securityError) {
+      return securityError;
+    }
+
+    const turnstileError = await verifyTurnstileToken(
+      request,
+      typeof body?.turnstileToken === "string" ? body.turnstileToken : null,
+    );
+
+    if (turnstileError) {
+      return turnstileError;
+    }
+
     const parsed = setupSchema.parse(body);
     const username = parsed.username.toLowerCase();
 

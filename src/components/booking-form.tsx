@@ -2,6 +2,8 @@
 
 import { FormEvent, useState } from "react";
 
+import { resetTurnstileInForm, TurnstileField } from "@/components/turnstile-field";
+
 type BookingPayload = {
   firstName: string;
   lastName: string;
@@ -12,6 +14,8 @@ type BookingPayload = {
   eventDuration: string;
   approximateGuestCount: number;
   additionalNotes?: string;
+  csrfToken: string;
+  turnstileToken?: string;
 };
 
 type FormState =
@@ -55,7 +59,12 @@ function getBookingErrorMessage(payload: unknown): string {
   return "Unable to send booking request. Please try again.";
 }
 
-export function BookingForm() {
+type BookingFormProps = {
+  csrfToken: string;
+  turnstileSiteKey?: string;
+};
+
+export function BookingForm({ csrfToken, turnstileSiteKey }: BookingFormProps) {
   const [state, setState] = useState<FormState>(initialState);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -76,6 +85,8 @@ export function BookingForm() {
       eventDuration: String(formData.get("eventDuration") ?? ""),
       approximateGuestCount: Number(formData.get("approximateGuestCount") ?? 0),
       additionalNotes: String(formData.get("additionalNotes") ?? "").trim() || undefined,
+      csrfToken,
+      turnstileToken: String(formData.get("cf-turnstile-response") ?? ""),
     };
 
     try {
@@ -89,6 +100,7 @@ export function BookingForm() {
       const responsePayload = (await response.json().catch(() => null)) as unknown;
 
       if (!response.ok) {
+        resetTurnstileInForm(form);
         setState({
           status: "error",
           message: getBookingErrorMessage(responsePayload),
@@ -104,7 +116,9 @@ export function BookingForm() {
         message: `Thank you, ${firstName}! Your booking request was sent, and I'll reach out shortly.`,
       });
       form.reset();
+      resetTurnstileInForm(form);
     } catch {
+      resetTurnstileInForm(form);
       setState({
         status: "error",
         message: "Unable to send booking request right now. Please try again in a moment.",
@@ -135,6 +149,7 @@ export function BookingForm() {
         placeholder="Additional notes"
         rows={4}
       />
+      <TurnstileField className="sm:col-span-2" siteKey={turnstileSiteKey} />
 
       <button
         className="editorial-button justify-self-center rounded px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-60 sm:col-span-2"

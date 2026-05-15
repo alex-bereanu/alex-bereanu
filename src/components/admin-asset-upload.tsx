@@ -7,6 +7,7 @@ import { formatBytes, MAX_GALLERY_ASSET_SIZE_BYTES, MAX_GALLERY_ASSET_UPLOAD_COU
 
 type AdminAssetUploadProps = {
   galleryId: string;
+  csrfToken: string;
 };
 
 type UploadState =
@@ -113,8 +114,10 @@ async function uploadAssetViaServer(input: {
   objectKey: string;
   contentType: string;
   file: File;
+  csrfToken: string;
 }): Promise<void> {
   const relayPayload = new FormData();
+  relayPayload.set("csrfToken", input.csrfToken);
   relayPayload.set("galleryId", input.galleryId);
   relayPayload.set("objectKey", input.objectKey);
   relayPayload.set("contentType", input.contentType);
@@ -130,7 +133,7 @@ async function uploadAssetViaServer(input: {
   }
 }
 
-export function AdminAssetUpload({ galleryId }: AdminAssetUploadProps) {
+export function AdminAssetUpload({ galleryId, csrfToken }: AdminAssetUploadProps) {
   const router = useRouter();
   const [state, setState] = useState<UploadState>({ status: "idle" });
   const [selectedCount, setSelectedCount] = useState(0);
@@ -190,12 +193,14 @@ export function AdminAssetUpload({ galleryId }: AdminAssetUploadProps) {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
+              "x-csrf-token": csrfToken,
             },
             body: JSON.stringify({
               galleryId,
               filename: file.name,
               contentType: file.type || "application/octet-stream",
               sizeBytes: file.size,
+              csrfToken,
             }),
           }),
         ]);
@@ -221,6 +226,7 @@ export function AdminAssetUpload({ galleryId }: AdminAssetUploadProps) {
             objectKey: uploadPayload.objectKey,
             contentType: uploadPayload.contentType,
             file,
+            csrfToken,
           });
         }
 
@@ -240,10 +246,12 @@ export function AdminAssetUpload({ galleryId }: AdminAssetUploadProps) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "x-csrf-token": csrfToken,
         },
         body: JSON.stringify({
           galleryId,
           uploads: uploaded,
+          csrfToken,
         }),
       });
 

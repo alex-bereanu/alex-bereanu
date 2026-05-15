@@ -18,6 +18,7 @@ type AssetListItem = {
 type AdminAssetManagerProps = {
   galleryId: string;
   assets: AssetListItem[];
+  csrfToken: string;
   r2PublicBase?: string | null;
 };
 
@@ -54,7 +55,7 @@ function moveAsset(assets: AssetListItem[], draggedId: string, targetId: string)
   return next;
 }
 
-export function AdminAssetManager({ galleryId, assets: initialAssets, r2PublicBase }: AdminAssetManagerProps) {
+export function AdminAssetManager({ galleryId, assets: initialAssets, csrfToken, r2PublicBase }: AdminAssetManagerProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -81,10 +82,12 @@ export function AdminAssetManager({ galleryId, assets: initialAssets, r2PublicBa
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "x-csrf-token": csrfToken,
         },
         body: JSON.stringify({
           galleryId,
           assetIds: currentOrder,
+          csrfToken,
         }),
       });
 
@@ -109,10 +112,12 @@ export function AdminAssetManager({ galleryId, assets: initialAssets, r2PublicBa
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "x-csrf-token": csrfToken,
         },
         body: JSON.stringify({
           galleryId,
           assetId,
+          csrfToken,
         }),
       });
 
@@ -134,7 +139,7 @@ export function AdminAssetManager({ galleryId, assets: initialAssets, r2PublicBa
       <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-700">Assets</h3>
       <p className="mt-1 text-xs text-neutral-600">Drag and drop to reorder, then click Save order.</p>
 
-      <AdminAssetUpload galleryId={galleryId} />
+      <AdminAssetUpload galleryId={galleryId} csrfToken={csrfToken} />
 
       {assets.length > 0 ? (
         <div className="mt-3 space-y-2">

@@ -5,8 +5,10 @@ import { cookies } from "next/headers";
 import { env } from "@/config/env";
 import { GalleryLightbox } from "@/components/gallery-lightbox";
 import { SiteFooter } from "@/components/site-footer";
+import { TurnstileField } from "@/components/turnstile-field";
 import { prisma } from "@/lib/db";
 import { getGalleryAccessCookieName, verifyGalleryAccessToken } from "@/server/auth/gallery-access";
+import { createCsrfToken } from "@/server/security/request-protection";
 import { buildGalleryPhotoFromAsset } from "@/server/services/public-gallery";
 
 type CustomGalleryPageProps = {
@@ -84,8 +86,10 @@ export default async function CustomGalleryPage({ params, searchParams }: Custom
 
           <form className="mt-5 grid gap-3" action="/api/gallery-access/unlock" method="post">
             <input type="hidden" name="slug" value={slug} />
+            <input type="hidden" name="csrfToken" value={createCsrfToken()} />
             <input type="hidden" name="redirectTo" value={`/g/${slug}`} />
             <input className="editorial-input rounded px-3 py-2" name="password" type="password" placeholder="Password" required />
+            <TurnstileField siteKey={env.NEXT_PUBLIC_TURNSTILE_SITE_KEY} />
             <button className="editorial-button rounded px-4 py-2" type="submit">
               Unlock gallery
             </button>
@@ -98,6 +102,9 @@ export default async function CustomGalleryPage({ params, searchParams }: Custom
   }
 
   const publicBase = env.R2_PUBLIC_BASE_URL?.replace(/\/$/, "") ?? null;
+  const downloadsRemaining =
+    shareLink.maxDownloads === null ? null : Math.max(shareLink.maxDownloads - shareLink.downloadCount, 0);
+  const canDownload = downloadsRemaining === null || downloadsRemaining > 0;
   const photos = publicBase
     ? shareLink.gallery.assets.flatMap((asset) => {
         const photo = buildGalleryPhotoFromAsset(
@@ -126,12 +133,16 @@ export default async function CustomGalleryPage({ params, searchParams }: Custom
 
       <section className="flex flex-wrap gap-3">
         {shareLink.gallery.archiveObjectKey ? (
-          <a
-            className="editorial-button rounded px-4 py-2"
-            href={`/api/galleries/${slug}/archive-download`}
-          >
-            Download full gallery ZIP
-          </a>
+          canDownload ? (
+            <a
+              className="editorial-button rounded px-4 py-2"
+              href={`/api/galleries/${slug}/archive-download`}
+            >
+              Download full gallery ZIP
+            </a>
+          ) : (
+            <span className="rounded bg-neutral-100 px-4 py-2 text-sm text-neutral-600">Download limit reached</span>
+          )
         ) : (
           <span className="rounded bg-neutral-100 px-4 py-2 text-sm text-neutral-600">ZIP archive not uploaded yet</span>
         )}
@@ -148,15 +159,19 @@ export default async function CustomGalleryPage({ params, searchParams }: Custom
       <section className="space-y-2">
         <h2 className="editorial-kicker text-neutral-700">Original downloads</h2>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {shareLink.gallery.assets.map((asset) => (
-            <a
-              key={asset.id}
-              className="editorial-card rounded px-3 py-2 text-xs transition hover:-translate-y-0.5"
-              href={`/api/galleries/${slug}/assets/${asset.id}/download`}
-            >
-              {asset.originalFilename}
-            </a>
-          ))}
+          {canDownload
+            ? shareLink.gallery.assets.map((asset) => (
+                <a
+                  key={asset.id}
+                  className="editorial-card rounded px-3 py-2 text-xs transition hover:-translate-y-0.5"
+                  href={`/api/galleries/${slug}/assets/${asset.id}/download`}
+                >
+                  {asset.originalFilename}
+                </a>
+              ))
+            : (
+                <p className="text-sm text-neutral-600">Download limit reached for this gallery link.</p>
+              )}
         </div>
       </section>
 

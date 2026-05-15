@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { buildTicketReplyTemplate } from "@/server/services/email-templates";
 import { isMailerConfigured, sendTransactionalEmail } from "@/server/services/mailer";
 import { requireAdminRequestSession } from "@/server/auth/admin-guard";
+import { verifyMutationProtection } from "@/server/security/request-protection";
 
 const replySchema = z.object({
   ticketId: z.string().trim().min(1),
@@ -14,7 +15,7 @@ const replySchema = z.object({
 });
 
 function redirectToAdmin(request: Request, query: string): NextResponse {
-  const url = new URL(`/admin?${query}`, request.url);
+  const url = new URL(`/admin/tickets?${query}`, request.url);
   return NextResponse.redirect(url, 303);
 }
 
@@ -30,6 +31,11 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   try {
     const formData = await request.formData();
+    const securityError = verifyMutationProtection(request, String(formData.get("csrfToken") ?? ""));
+
+    if (securityError) {
+      return securityError;
+    }
 
     const parsed = replySchema.parse({
       ticketId: formData.get("ticketId"),

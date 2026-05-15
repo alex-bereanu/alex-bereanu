@@ -7,6 +7,7 @@ import type { GalleryCategory, GalleryVisibility } from "@prisma/client";
 type AdminGalleryCreateFormProps = {
   categoryLabels: Record<GalleryCategory, string>;
   categoryOptions: GalleryCategory[];
+  csrfToken: string;
   initialCategory: GalleryCategory;
   mainCategoryOptions: GalleryCategory[];
   visibilityOptions: GalleryVisibility[];
@@ -15,6 +16,7 @@ type AdminGalleryCreateFormProps = {
 export function AdminGalleryCreateForm({
   categoryLabels,
   categoryOptions,
+  csrfToken,
   initialCategory,
   mainCategoryOptions,
   visibilityOptions,
@@ -50,6 +52,7 @@ export function AdminGalleryCreateForm({
       </div>
 
       <form className="mt-4 grid gap-3 md:grid-cols-2" action="/admin/actions/galleries/create" method="post">
+        <input type="hidden" name="csrfToken" value={csrfToken} />
         <input type="hidden" name="redirectCategory" value={selectedCategory} />
         <input className="rounded border px-3 py-2 text-sm" name="title" placeholder="Gallery title" required />
         <input className="rounded border px-3 py-2 text-sm" name="slug" placeholder="gallery-slug" required />

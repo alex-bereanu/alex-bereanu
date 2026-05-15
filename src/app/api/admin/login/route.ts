@@ -14,7 +14,9 @@ import {
   isAdminSessionConfigured,
 } from "@/server/auth/admin-session";
 import { getSecureCookieOptions } from "@/server/auth/cookies";
+import { verifyMutationProtection } from "@/server/security/request-protection";
 import { checkRateLimit, getClientIp, rateLimitJsonResponse } from "@/server/security/rate-limit";
+import { verifyTurnstileToken } from "@/server/security/turnstile";
 
 const loginSchema = z.object({
   username: z.string().trim().min(1).max(64),
@@ -88,7 +90,7 @@ async function hasDatabaseAdminUser(): Promise<boolean> {
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
-  const loginRateLimit = checkRateLimit({
+  const loginRateLimit = await checkRateLimit({
     key: `admin-login:${getClientIp(request)}`,
     limit: 8,
     windowMs: 15 * 60 * 1000,
@@ -107,6 +109,21 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   try {
     const body = await request.json();
+    const securityError = verifyMutationProtection(request, typeof body?.csrfToken === "string" ? body.csrfToken : null);
+
+    if (securityError) {
+      return securityError;
+    }
+
+    const turnstileError = await verifyTurnstileToken(
+      request,
+      typeof body?.turnstileToken === "string" ? body.turnstileToken : null,
+    );
+
+    if (turnstileError) {
+      return turnstileError;
+    }
+
     const input = loginSchema.parse(body);
 
     const normalizedUsername = input.username.toLowerCase();

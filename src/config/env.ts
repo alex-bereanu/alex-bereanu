@@ -12,6 +12,7 @@ const envSchema = z.object({
   ADMIN_PASSWORD_HASH: z.string().optional(),
   ADMIN_PASSWORD_PLAIN: z.string().optional(),
   ADMIN_SESSION_SECRET: z.string().optional(),
+  CSRF_SECRET: z.string().optional(),
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
   GOOGLE_OAUTH_REDIRECT_URI: z.string().optional(),
@@ -25,6 +26,7 @@ const envSchema = z.object({
   R2_BUCKET_NAME: z.string().optional(),
   R2_REGION: z.string().optional(),
   R2_PUBLIC_BASE_URL: z.string().url().optional(),
+  NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.string().optional(),
   TURNSTILE_SECRET_KEY: z.string().optional(),
 });
 

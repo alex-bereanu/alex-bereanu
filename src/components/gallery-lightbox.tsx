@@ -3,7 +3,12 @@
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import PhotoAlbum, { type Photo } from "react-photo-album";
-import Lightbox from "yet-another-react-lightbox";
+import Lightbox, {
+  createIcon,
+  IconButton,
+  stopNavigationEventsPropagation,
+  type ToolbarSettings,
+} from "yet-another-react-lightbox";
 import Download from "yet-another-react-lightbox/plugins/download";
 import Thumbnails from "yet-another-react-lightbox/plugins/thumbnails";
 import Zoom from "yet-another-react-lightbox/plugins/zoom";
@@ -37,6 +42,48 @@ type GalleryLightboxProps = {
 };
 
 const IMAGE_QUALITY = 75;
+const DOWNLOAD_ALL_STAGGER_MS = 180;
+const DownloadAllIcon = createIcon(
+  "DownloadAllIcon",
+  <>
+    <path d="M4 5h12v2H4V5zm4 4h12v2H8V9z" />
+    <path d="M12 13h2v3.17l1.59-1.58L17 16l-4 4-4-4 1.41-1.41L12 16.17V13z" />
+    <path d="M7 20h12v-2h2v2c0 1.1-.9 2-2 2H7c-1.1 0-2-.9-2-2v-2h2v2z" />
+  </>,
+);
+
+declare module "yet-another-react-lightbox" {
+  interface Labels {
+    "Download all photos"?: string;
+  }
+}
+
+function downloadPhoto(url: string, index: number) {
+  window.setTimeout(() => {
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = "";
+    link.rel = "noopener";
+    link.style.display = "none";
+    document.body.append(link);
+    link.click();
+    link.remove();
+  }, index * DOWNLOAD_ALL_STAGGER_MS);
+}
+
+function DownloadAllButton({ urls }: { urls: string[] }) {
+  return (
+    <IconButton
+      label="Download all photos"
+      icon={DownloadAllIcon}
+      onClick={() => {
+        urls.forEach(downloadPhoto);
+      }}
+      {...stopNavigationEventsPropagation()}
+    />
+  );
+}
 
 export function GalleryLightbox({
   photos,
@@ -115,6 +162,22 @@ export function GalleryLightbox({
     [isMobileLightbox, photos],
   );
   const plugins = photos.some((photo) => photo.downloadHref) ? [Zoom, Thumbnails, Download] : [Zoom, Thumbnails];
+  const downloadAllUrls = useMemo(
+    () => photos.flatMap((photo) => (photo.downloadHref ? [photo.downloadHref] : [])),
+    [photos],
+  );
+  const toolbarButtons = useMemo<ToolbarSettings["buttons"] | undefined>(
+    () =>
+      downloadAllUrls.length > 0
+        ? [
+            "download",
+            <DownloadAllButton key="download-all" urls={downloadAllUrls} />,
+            "zoom",
+            "close",
+          ]
+        : undefined,
+    [downloadAllUrls],
+  );
 
   if (photoAlbumItems.length === 0) {
     return (
@@ -174,6 +237,8 @@ export function GalleryLightbox({
         close={() => setIndex(-1)}
         slides={slides}
         plugins={plugins}
+        toolbar={toolbarButtons ? { buttons: toolbarButtons } : undefined}
+        thumbnails={{ showToggle: false }}
         carousel={{ imageFit: "contain" }}
         controller={{ closeOnBackdropClick: true }}
       />

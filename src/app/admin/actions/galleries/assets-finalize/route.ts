@@ -5,6 +5,7 @@ import { env } from "@/config/env";
 import { prisma } from "@/lib/db";
 import { MAX_GALLERY_ASSET_UPLOAD_COUNT } from "@/lib/upload-limits";
 import { requireAdminRequestSession } from "@/server/auth/admin-guard";
+import { verifyMutationProtection } from "@/server/security/request-protection";
 import { processGalleryAssetVariants } from "@/server/services/image-variants";
 
 export const runtime = "nodejs";
@@ -42,6 +43,12 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   try {
     const body = await request.json();
+    const securityError = verifyMutationProtection(request, typeof body?.csrfToken === "string" ? body.csrfToken : null);
+
+    if (securityError) {
+      return securityError;
+    }
+
     const parsed = requestSchema.parse(body);
 
     const maxSortRecord = await prisma.galleryAsset.findFirst({

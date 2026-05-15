@@ -6,6 +6,7 @@ import { env } from "@/config/env";
 import { prisma } from "@/lib/db";
 import { toSlug } from "@/lib/slug";
 import { requireAdminRequestSession } from "@/server/auth/admin-guard";
+import { verifyMutationProtection } from "@/server/security/request-protection";
 
 const createGallerySchema = z.object({
   title: z.string().trim().min(2).max(160),
@@ -41,6 +42,12 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   const formData = await request.formData();
+  const securityError = verifyMutationProtection(request, String(formData.get("csrfToken") ?? ""));
+
+  if (securityError) {
+    return securityError;
+  }
+
   const createCategoryQuery = resolveRedirectCategory(formData);
 
   try {

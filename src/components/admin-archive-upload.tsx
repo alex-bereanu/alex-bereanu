@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 type AdminArchiveUploadProps = {
   galleryId: string;
+  csrfToken: string;
   currentArchiveFilename?: string | null;
 };
 
@@ -41,8 +42,10 @@ async function uploadArchiveViaServer(input: {
   objectKey: string;
   contentType: string;
   file: File;
+  csrfToken: string;
 }): Promise<boolean> {
   const relayPayload = new FormData();
+  relayPayload.set("csrfToken", input.csrfToken);
   relayPayload.set("galleryId", input.galleryId);
   relayPayload.set("objectKey", input.objectKey);
   relayPayload.set("contentType", input.contentType);
@@ -56,7 +59,7 @@ async function uploadArchiveViaServer(input: {
   return relayResponse.ok;
 }
 
-export function AdminArchiveUpload({ galleryId, currentArchiveFilename }: AdminArchiveUploadProps) {
+export function AdminArchiveUpload({ galleryId, csrfToken, currentArchiveFilename }: AdminArchiveUploadProps) {
   const router = useRouter();
   const [state, setState] = useState<UploadState>({ status: "idle" });
   const shouldUseDirectUpload =
@@ -86,12 +89,14 @@ export function AdminArchiveUpload({ galleryId, currentArchiveFilename }: AdminA
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "x-csrf-token": csrfToken,
         },
         body: JSON.stringify({
           galleryId,
           filename: file.name,
           contentType: file.type || "application/zip",
           sizeBytes: file.size,
+          csrfToken,
         }),
       });
 
@@ -110,6 +115,7 @@ export function AdminArchiveUpload({ galleryId, currentArchiveFilename }: AdminA
           objectKey: uploadPayload.objectKey,
           contentType: file.type || "application/zip",
           file,
+          csrfToken,
         });
 
         if (!serverUploadSucceeded) {
@@ -121,11 +127,13 @@ export function AdminArchiveUpload({ galleryId, currentArchiveFilename }: AdminA
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "x-csrf-token": csrfToken,
         },
         body: JSON.stringify({
           galleryId,
           objectKey: uploadPayload.objectKey,
           filename: uploadPayload.filename,
+          csrfToken,
         }),
       });
 

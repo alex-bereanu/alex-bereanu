@@ -10,7 +10,9 @@ import {
   getGalleryAccessMaxAgeSeconds,
 } from "@/server/auth/gallery-access";
 import { getSecureCookieOptions } from "@/server/auth/cookies";
+import { sanitizeSameOriginPath, verifyMutationProtection } from "@/server/security/request-protection";
 import { checkRateLimit, getClientIp, rateLimitRedirectResponse } from "@/server/security/rate-limit";
+import { verifyTurnstileToken } from "@/server/security/turnstile";
 
 const unlockSchema = z.object({
   slug: z.string().trim().min(1),
@@ -37,12 +39,24 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   try {
     const formData = await request.formData();
+    const securityError = verifyMutationProtection(request, String(formData.get("csrfToken") ?? ""));
+
+    if (securityError) {
+      return securityError;
+    }
+
+    const turnstileError = await verifyTurnstileToken(request, String(formData.get("cf-turnstile-response") ?? ""));
+
+    if (turnstileError) {
+      return turnstileError;
+    }
+
     const parsed = unlockSchema.parse({
       slug: formData.get("slug"),
       password: formData.get("password"),
       redirectTo: formData.get("redirectTo"),
     });
-    const unlockRateLimit = checkRateLimit({
+    const unlockRateLimit = await checkRateLimit({
       key: `gallery-unlock:${clientIp}:${parsed.slug}`,
       limit: 10,
       windowMs: 15 * 60 * 1000,
@@ -82,7 +96,12 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     const token = await createGalleryAccessToken(parsed.slug);
 
-    const response = NextResponse.redirect(new URL(parsed.redirectTo || `/g/${parsed.slug}`, request.url), 303);
+    const redirectPath = sanitizeSameOriginPath(parsed.redirectTo, `/g/${parsed.slug}`, request.url);
+    const expectedGalleryPrefix = `/g/${parsed.slug}`;
+    const response = NextResponse.redirect(
+      new URL(redirectPath.startsWith(expectedGalleryPrefix) ? redirectPath : expectedGalleryPrefix, request.url),
+      303,
+    );
 
     response.cookies.set({
       name: getGalleryAccessCookieName(),

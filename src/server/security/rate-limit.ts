@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 
+import { env } from "@/config/env";
+import { prisma } from "@/lib/db";
+
 type RateLimitOptions = {
   key: string;
   limit: number;
@@ -16,6 +19,7 @@ type RateLimitResult =
   | { allowed: false; remaining: 0; resetAt: number; retryAfterSeconds: number };
 
 const buckets = new Map<string, RateLimitRecord>();
+let databaseRateLimitReady = false;
 
 function pruneExpiredBuckets(now: number): void {
   if (buckets.size < 1000) {
@@ -39,7 +43,7 @@ export function getClientIp(request: Request): string {
   return request.headers.get("x-real-ip")?.trim() || "unknown";
 }
 
-export function checkRateLimit({ key, limit, windowMs }: RateLimitOptions): RateLimitResult {
+function checkMemoryRateLimit({ key, limit, windowMs }: RateLimitOptions): RateLimitResult {
   const now = Date.now();
   pruneExpiredBuckets(now);
 
@@ -68,6 +72,76 @@ export function checkRateLimit({ key, limit, windowMs }: RateLimitOptions): Rate
     remaining: Math.max(limit - existingRecord.count, 0),
     resetAt: existingRecord.resetAt,
   };
+}
+
+async function ensureDatabaseRateLimitTable(): Promise<void> {
+  if (databaseRateLimitReady) {
+    return;
+  }
+
+  await prisma.$executeRaw`
+    CREATE TABLE IF NOT EXISTS "RateLimitBucket" (
+      "key" TEXT PRIMARY KEY,
+      "count" INTEGER NOT NULL,
+      "resetAt" TIMESTAMP(3) NOT NULL,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `;
+  databaseRateLimitReady = true;
+}
+
+async function checkDatabaseRateLimit(options: RateLimitOptions): Promise<RateLimitResult> {
+  await ensureDatabaseRateLimitTable();
+
+  const resetAt = new Date(Date.now() + options.windowMs);
+  const rows = await prisma.$queryRaw<Array<{ count: number; resetAt: Date }>>`
+    INSERT INTO "RateLimitBucket" ("key", "count", "resetAt", "updatedAt")
+    VALUES (${options.key}, 1, ${resetAt}, CURRENT_TIMESTAMP)
+    ON CONFLICT ("key") DO UPDATE SET
+      "count" = CASE
+        WHEN "RateLimitBucket"."resetAt" <= CURRENT_TIMESTAMP THEN 1
+        ELSE "RateLimitBucket"."count" + 1
+      END,
+      "resetAt" = CASE
+        WHEN "RateLimitBucket"."resetAt" <= CURRENT_TIMESTAMP THEN ${resetAt}
+        ELSE "RateLimitBucket"."resetAt"
+      END,
+      "updatedAt" = CURRENT_TIMESTAMP
+    RETURNING "count", "resetAt"
+  `;
+  const record = rows[0];
+
+  if (!record) {
+    return checkMemoryRateLimit(options);
+  }
+
+  if (record.count > options.limit) {
+    return {
+      allowed: false,
+      remaining: 0,
+      resetAt: record.resetAt.getTime(),
+      retryAfterSeconds: Math.max(Math.ceil((record.resetAt.getTime() - Date.now()) / 1000), 1),
+    };
+  }
+
+  return {
+    allowed: true,
+    remaining: Math.max(options.limit - record.count, 0),
+    resetAt: record.resetAt.getTime(),
+  };
+}
+
+export async function checkRateLimit(options: RateLimitOptions): Promise<RateLimitResult> {
+  if (!env.DATABASE_URL) {
+    return checkMemoryRateLimit(options);
+  }
+
+  try {
+    return await checkDatabaseRateLimit(options);
+  } catch (error) {
+    console.error("Database rate limit failed; falling back to in-memory limiter.", error);
+    return checkMemoryRateLimit(options);
+  }
 }
 
 export function rateLimitJsonResponse(message: string, retryAfterSeconds: number): NextResponse {
