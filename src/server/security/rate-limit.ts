@@ -1,3 +1,8 @@
+import "server-only";
+
+import { createHmac } from "node:crypto";
+import { isIP } from "node:net";
+
 import { NextResponse } from "next/server";
 
 import { env } from "@/config/env";
@@ -19,34 +24,41 @@ type RateLimitResult =
   | { allowed: false; remaining: 0; resetAt: number; retryAfterSeconds: number };
 
 const buckets = new Map<string, RateLimitRecord>();
-let databaseRateLimitReady = false;
 
-function pruneExpiredBuckets(now: number): void {
-  if (buckets.size < 1000) {
-    return;
-  }
-
-  for (const [key, record] of buckets.entries()) {
-    if (record.resetAt <= now) {
-      buckets.delete(key);
-    }
-  }
+function validForwardedIp(value: string | null): string | null {
+  const candidate = value?.split(",")[0]?.trim();
+  return candidate && isIP(candidate) !== 0 ? candidate : null;
 }
 
 export function getClientIp(request: Request): string {
-  const forwardedFor = request.headers.get("x-forwarded-for");
-
-  if (forwardedFor) {
-    return forwardedFor.split(",")[0]?.trim() || "unknown";
+  if (env.VERCEL === "1") {
+    return validForwardedIp(request.headers.get("x-vercel-forwarded-for")) ?? "unknown";
   }
 
-  return request.headers.get("x-real-ip")?.trim() || "unknown";
+  return env.NODE_ENV === "development"
+    ? validForwardedIp(request.headers.get("x-real-ip")) ?? "unknown"
+    : "unknown";
+}
+
+export function buildRateLimitKey(scope: string, request: Request, discriminator?: string): string {
+  const secret = env.RATE_LIMIT_SECRET ?? env.CSRF_SECRET ?? "development-rate-limit-key";
+  const clientIdentity = getClientIp(request);
+  const digest = createHmac("sha256", secret)
+    .update(`${clientIdentity}\n${discriminator ?? ""}`)
+    .digest("hex");
+  return `${scope}:${digest}`;
+}
+
+function pruneExpiredBuckets(now: number): void {
+  if (buckets.size < 1000) return;
+  for (const [key, record] of buckets.entries()) {
+    if (record.resetAt <= now) buckets.delete(key);
+  }
 }
 
 function checkMemoryRateLimit({ key, limit, windowMs }: RateLimitOptions): RateLimitResult {
   const now = Date.now();
   pruneExpiredBuckets(now);
-
   const existingRecord = buckets.get(key);
 
   if (!existingRecord || existingRecord.resetAt <= now) {
@@ -65,34 +77,10 @@ function checkMemoryRateLimit({ key, limit, windowMs }: RateLimitOptions): RateL
   }
 
   existingRecord.count += 1;
-  buckets.set(key, existingRecord);
-
-  return {
-    allowed: true,
-    remaining: Math.max(limit - existingRecord.count, 0),
-    resetAt: existingRecord.resetAt,
-  };
-}
-
-async function ensureDatabaseRateLimitTable(): Promise<void> {
-  if (databaseRateLimitReady) {
-    return;
-  }
-
-  await prisma.$executeRaw`
-    CREATE TABLE IF NOT EXISTS "RateLimitBucket" (
-      "key" TEXT PRIMARY KEY,
-      "count" INTEGER NOT NULL,
-      "resetAt" TIMESTAMP(3) NOT NULL,
-      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )
-  `;
-  databaseRateLimitReady = true;
+  return { allowed: true, remaining: Math.max(limit - existingRecord.count, 0), resetAt: existingRecord.resetAt };
 }
 
 async function checkDatabaseRateLimit(options: RateLimitOptions): Promise<RateLimitResult> {
-  await ensureDatabaseRateLimitTable();
-
   const resetAt = new Date(Date.now() + options.windowMs);
   const rows = await prisma.$queryRaw<Array<{ count: number; resetAt: Date }>>`
     INSERT INTO "RateLimitBucket" ("key", "count", "resetAt", "updatedAt")
@@ -110,10 +98,7 @@ async function checkDatabaseRateLimit(options: RateLimitOptions): Promise<RateLi
     RETURNING "count", "resetAt"
   `;
   const record = rows[0];
-
-  if (!record) {
-    return checkMemoryRateLimit(options);
-  }
+  if (!record) throw new Error("rate_limit_write_missing");
 
   if (record.count > options.limit) {
     return {
@@ -124,22 +109,25 @@ async function checkDatabaseRateLimit(options: RateLimitOptions): Promise<RateLi
     };
   }
 
-  return {
-    allowed: true,
-    remaining: Math.max(options.limit - record.count, 0),
-    resetAt: record.resetAt.getTime(),
-  };
+  return { allowed: true, remaining: Math.max(options.limit - record.count, 0), resetAt: record.resetAt.getTime() };
 }
 
 export async function checkRateLimit(options: RateLimitOptions): Promise<RateLimitResult> {
   if (!env.DATABASE_URL) {
+    if (env.NODE_ENV === "production") {
+      return { allowed: false, remaining: 0, resetAt: Date.now() + 60_000, retryAfterSeconds: 60 };
+    }
     return checkMemoryRateLimit(options);
   }
 
   try {
     return await checkDatabaseRateLimit(options);
   } catch (error) {
-    console.error("Database rate limit failed; falling back to in-memory limiter.", error);
+    const errorName = error instanceof Error ? error.name : "UnknownError";
+    console.error("Distributed rate limiter unavailable.", { errorName });
+    if (env.NODE_ENV === "production") {
+      return { allowed: false, remaining: 0, resetAt: Date.now() + 60_000, retryAfterSeconds: 60 };
+    }
     return checkMemoryRateLimit(options);
   }
 }
@@ -147,23 +135,15 @@ export async function checkRateLimit(options: RateLimitOptions): Promise<RateLim
 export function rateLimitJsonResponse(message: string, retryAfterSeconds: number): NextResponse {
   return NextResponse.json(
     { error: message },
-    {
-      status: 429,
-      headers: {
-        "Retry-After": String(retryAfterSeconds),
-      },
-    },
+    { status: 429, headers: { "Retry-After": String(retryAfterSeconds), "Cache-Control": "private, no-store" } },
   );
 }
 
 export function rateLimitRedirectResponse(request: Request, path: string, retryAfterSeconds: number): NextResponse {
   const url = new URL(path, request.url);
   url.searchParams.set("error", "rate_limited");
-
   return NextResponse.redirect(url, {
     status: 303,
-    headers: {
-      "Retry-After": String(retryAfterSeconds),
-    },
+    headers: { "Retry-After": String(retryAfterSeconds), "Cache-Control": "private, no-store" },
   });
 }

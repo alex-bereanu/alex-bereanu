@@ -1,0 +1,33 @@
+name: Deployed security and performance audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: HTTPS production or staging URL
+        required: true
+        type: string
+  schedule:
+    - cron: "41 5 * * 2"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.AUDIT_BASE_URL != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      AUDIT_URL: ${{ inputs.base_url || vars.AUDIT_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node scripts/verify-deployment.mjs "$AUDIT_URL"
+      - run: npx --yes @lhci/cli@0.15.1 collect --url="$AUDIT_URL" --url="$AUDIT_URL/weddings" --numberOfRuns=3
+      - run: npx --yes @lhci/cli@0.15.1 assert --config=lighthouserc.json
+

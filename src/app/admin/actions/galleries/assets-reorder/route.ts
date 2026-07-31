@@ -5,6 +5,7 @@ import { env } from "@/config/env";
 import { prisma } from "@/lib/db";
 import { requireAdminRequestSession } from "@/server/auth/admin-guard";
 import { verifyMutationProtection } from "@/server/security/request-protection";
+import { invalidatePublicGalleryCache } from "@/server/services/public-cache";
 
 const reorderSchema = z.object({
   galleryId: z.string().trim().min(1),
@@ -40,6 +41,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     const existingAssets = await prisma.galleryAsset.findMany({
       where: {
         galleryId: parsed.galleryId,
+        id: { in: parsed.assetIds },
       },
       select: {
         id: true,
@@ -47,7 +49,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     });
 
     if (existingAssets.length !== parsed.assetIds.length) {
-      return NextResponse.json({ error: "Asset list does not match gallery asset count." }, { status: 400 });
+      return NextResponse.json({ error: "Asset list contains unknown gallery assets." }, { status: 400 });
     }
 
     const existingIds = new Set(existingAssets.map((asset) => asset.id));
@@ -66,6 +68,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         }),
       ),
     );
+    invalidatePublicGalleryCache();
 
     return NextResponse.json({
       ok: true,

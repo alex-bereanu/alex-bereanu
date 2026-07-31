@@ -1,5 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
-
 import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -10,12 +8,13 @@ import {
   createAdminSessionToken,
   getAdminSessionCookieName,
   getAdminSessionMaxAgeSeconds,
-  isAdminAuthConfigured,
+  isPasswordAdminLoginEnabled,
   isAdminSessionConfigured,
 } from "@/server/auth/admin-session";
 import { getSecureCookieOptions } from "@/server/auth/cookies";
+import { recordSecurityAuditEvent } from "@/server/security/audit";
 import { verifyMutationProtection } from "@/server/security/request-protection";
-import { checkRateLimit, getClientIp, rateLimitJsonResponse } from "@/server/security/rate-limit";
+import { buildRateLimitKey, checkRateLimit, getClientIp, rateLimitJsonResponse } from "@/server/security/rate-limit";
 import { verifyTurnstileToken } from "@/server/security/turnstile";
 
 const loginSchema = z.object({
@@ -23,32 +22,12 @@ const loginSchema = z.object({
   password: z.string().min(1).max(128),
 });
 
-function secureCompare(left: string, right: string): boolean {
-  const leftBuffer = Buffer.from(left);
-  const rightBuffer = Buffer.from(right);
-
-  if (leftBuffer.length !== rightBuffer.length) {
-    return false;
-  }
-
-  return timingSafeEqual(leftBuffer, rightBuffer);
-}
-
-async function validateEnvPassword(password: string): Promise<boolean> {
-  if (env.ADMIN_PASSWORD_HASH) {
-    return bcrypt.compare(password, env.ADMIN_PASSWORD_HASH);
-  }
-
-  if (env.ADMIN_PASSWORD_PLAIN) {
-    return secureCompare(password, env.ADMIN_PASSWORD_PLAIN);
-  }
-
-  return false;
-}
-
-async function validateDatabasePassword(username: string, password: string): Promise<boolean> {
+async function validateDatabasePassword(
+  username: string,
+  password: string,
+): Promise<{ id: string; username: string } | null> {
   if (!env.DATABASE_URL) {
-    return false;
+    return null;
   }
 
   try {
@@ -57,54 +36,46 @@ async function validateDatabasePassword(username: string, password: string): Pro
         username,
       },
       select: {
+        id: true,
+        username: true,
         passwordHash: true,
       },
     });
 
     if (!adminUser) {
-      return false;
+      return null;
     }
 
-    return bcrypt.compare(password, adminUser.passwordHash);
+    const passwordMatches = await bcrypt.compare(password, adminUser.passwordHash);
+    return passwordMatches ? { id: adminUser.id, username: adminUser.username } : null;
   } catch (error) {
     console.error("Unable to read admin users from database.", error);
-    return false;
-  }
-}
-
-async function hasDatabaseAdminUser(): Promise<boolean> {
-  if (!env.DATABASE_URL) {
-    return false;
-  }
-
-  try {
-    const adminUser = await prisma.adminUser.findFirst({
-      select: { id: true },
-    });
-
-    return Boolean(adminUser);
-  } catch (error) {
-    console.error("Unable to check existing admin users.", error);
-    return false;
+    return null;
   }
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
+  const clientIp = getClientIp(request);
   const loginRateLimit = await checkRateLimit({
-    key: `admin-login:${getClientIp(request)}`,
+    key: buildRateLimitKey("admin-login", request),
     limit: 8,
     windowMs: 15 * 60 * 1000,
   });
 
   if (!loginRateLimit.allowed) {
+    await recordSecurityAuditEvent({ eventType: "admin.login", outcome: "DENIED", clientIp, metadata: { reason: "rate_limited" } });
     return rateLimitJsonResponse("Too many login attempts. Please try again later.", loginRateLimit.retryAfterSeconds);
   }
 
   if (!isAdminSessionConfigured()) {
     return NextResponse.json(
-      { error: "Admin session is not configured. Set ADMIN_SESSION_SECRET." },
+      { error: "Admin sessions are not configured. Set DATABASE_URL and apply the Phase 1 schema migration." },
       { status: 503 },
     );
+  }
+
+  if (!isPasswordAdminLoginEnabled()) {
+    return NextResponse.json({ error: "Password-based admin login is disabled." }, { status: 404 });
   }
 
   try {
@@ -118,6 +89,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     const turnstileError = await verifyTurnstileToken(
       request,
       typeof body?.turnstileToken === "string" ? body.turnstileToken : null,
+      "admin_login",
     );
 
     if (turnstileError) {
@@ -128,35 +100,34 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     const normalizedUsername = input.username.toLowerCase();
 
-    const [databasePasswordMatches, envPasswordMatches] = await Promise.all([
-      validateDatabasePassword(normalizedUsername, input.password),
-      validateEnvPassword(input.password),
-    ]);
+    const adminUser = await validateDatabasePassword(normalizedUsername, input.password);
 
-    const envUsernameMatches = secureCompare(normalizedUsername, (env.ADMIN_USERNAME ?? "").toLowerCase());
-    const envCredentialsMatch = envUsernameMatches && envPasswordMatches;
-
-    if (!databasePasswordMatches && !envCredentialsMatch) {
-      const hasDbAdmin = await hasDatabaseAdminUser();
-      const hasEnvAdmin = isAdminAuthConfigured();
-
-      if (!hasDbAdmin && !hasEnvAdmin) {
-        return NextResponse.json(
-          { error: "No admin account is configured yet. Create one at /admin/setup." },
-          { status: 503 },
-        );
-      }
-
+    if (!adminUser) {
+      await recordSecurityAuditEvent({
+        eventType: "admin.login",
+        outcome: "FAILURE",
+        actor: normalizedUsername,
+        clientIp,
+        metadata: { provider: "password", reason: "invalid_credentials" },
+      });
       return NextResponse.json({ error: "Invalid credentials." }, { status: 401 });
     }
 
-    const token = await createAdminSessionToken(normalizedUsername);
+    const token = await createAdminSessionToken(`admin:${adminUser.id}`, "password");
     const response = NextResponse.json({ ok: true });
 
     response.cookies.set({
       name: getAdminSessionCookieName(),
       value: token,
       ...getSecureCookieOptions(getAdminSessionMaxAgeSeconds()),
+    });
+
+    await recordSecurityAuditEvent({
+      eventType: "admin.login",
+      outcome: "SUCCESS",
+      actor: `admin:${adminUser.id}`,
+      clientIp,
+      metadata: { provider: "password" },
     });
 
     return response;

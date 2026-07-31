@@ -39,7 +39,7 @@ export type VerifiedGoogleAdminProfile = {
 };
 
 function getOAuthSecret(): Uint8Array {
-  return new TextEncoder().encode(requireEnv("ADMIN_SESSION_SECRET"));
+  return new TextEncoder().encode(requireEnv("OAUTH_STATE_SECRET"));
 }
 
 function randomBase64Url(byteLength = 32): string {
@@ -73,7 +73,7 @@ export function getAdminGoogleAllowedEmails(): string[] {
 
 export function isAdminGoogleOAuthConfigured(): boolean {
   return Boolean(
-    env.ADMIN_SESSION_SECRET &&
+    env.OAUTH_STATE_SECRET &&
       env.GOOGLE_OAUTH_CLIENT_ID &&
       env.GOOGLE_OAUTH_CLIENT_SECRET &&
       getAdminGoogleAllowedEmails().length > 0,
@@ -152,6 +152,8 @@ export async function createAdminGoogleOAuthStateToken(input: Omit<OAuthState, "
     ...input,
   })
     .setProtectedHeader({ alg: "HS256" })
+    .setIssuer("alex-bereanu-photography")
+    .setAudience("admin-google-oauth")
     .setIssuedAt()
     .setExpirationTime(`${GOOGLE_OAUTH_STATE_MAX_AGE_SECONDS}s`)
     .sign(getOAuthSecret());
@@ -159,7 +161,11 @@ export async function createAdminGoogleOAuthStateToken(input: Omit<OAuthState, "
 
 export async function verifyAdminGoogleOAuthStateToken(token: string): Promise<OAuthState | null> {
   try {
-    const { payload } = await jwtVerify(token, getOAuthSecret());
+    const { payload } = await jwtVerify(token, getOAuthSecret(), {
+      algorithms: ["HS256"],
+      issuer: "alex-bereanu-photography",
+      audience: "admin-google-oauth",
+    });
     const parsedPayload = oauthStateSchema.safeParse(payload);
 
     if (!parsedPayload.success) {

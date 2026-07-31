@@ -92,6 +92,9 @@ export function validateImageUploadMetadata(input: {
   maxSizeBytes?: number;
 }): string | null {
   const extension = getFileExtension(input.filename);
+  if (extension === "heic" || extension === "heif" || /hei[cf]/i.test(input.contentType)) {
+    return "HEIC and HEIF are not accepted. Export the image as JPG before uploading.";
+  }
   const allowedMimeTypes = IMAGE_MIME_BY_EXTENSION[extension];
 
   if (!allowedMimeTypes || !allowedMimeTypes.includes(input.contentType.toLowerCase())) {

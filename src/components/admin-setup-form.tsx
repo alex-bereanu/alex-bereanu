@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { resetTurnstileInForm, TurnstileField } from "@/components/turnstile-field";
@@ -50,6 +50,11 @@ type AdminSetupFormProps = {
 export function AdminSetupForm({ csrfToken, turnstileSiteKey }: AdminSetupFormProps) {
   const router = useRouter();
   const [state, setState] = useState<FormState>({ status: "idle" });
+  const statusRef = useRef<HTMLParagraphElement | null>(null);
+
+  useEffect(() => {
+    if (state.status === "error") statusRef.current?.focus();
+  }, [state.status]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -68,6 +73,7 @@ export function AdminSetupForm({ csrfToken, turnstileSiteKey }: AdminSetupFormPr
           username: String(formData.get("username") ?? ""),
           password: String(formData.get("password") ?? ""),
           confirmPassword: String(formData.get("confirmPassword") ?? ""),
+          setupToken: String(formData.get("setupToken") ?? ""),
           csrfToken,
           turnstileToken: String(formData.get("cf-turnstile-response") ?? ""),
         }),
@@ -103,43 +109,34 @@ export function AdminSetupForm({ csrfToken, turnstileSiteKey }: AdminSetupFormPr
       <p className="mt-2 text-sm text-neutral-700">Set up your first admin username and password.</p>
 
       <form className="mt-6 grid gap-3" onSubmit={handleSubmit}>
-        <input
-          className="rounded border px-3 py-2"
-          name="username"
-          placeholder="Username"
-          minLength={3}
-          maxLength={64}
-          required
-        />
-        <input
-          className="rounded border px-3 py-2"
-          name="password"
-          type="password"
-          placeholder="Password"
-          minLength={8}
-          maxLength={128}
-          required
-        />
-        <input
-          className="rounded border px-3 py-2"
-          name="confirmPassword"
-          type="password"
-          placeholder="Confirm password"
-          minLength={8}
-          maxLength={128}
-          required
-        />
-        <TurnstileField siteKey={turnstileSiteKey} />
+        <label className="form-field">
+          <span>One-Time Setup Token</span>
+          <input className="rounded border px-3 py-2" name="setupToken" type="password" minLength={32} autoComplete="off" required />
+        </label>
+        <label className="form-field">
+          <span>Username</span>
+          <input className="rounded border px-3 py-2" name="username" minLength={3} maxLength={64} autoComplete="username" spellCheck={false} required />
+        </label>
+        <label className="form-field">
+          <span>Password</span>
+          <input className="rounded border px-3 py-2" name="password" type="password" minLength={12} maxLength={128} autoComplete="new-password" required />
+          <span className="form-helper">Use at least 12 characters.</span>
+        </label>
+        <label className="form-field">
+          <span>Confirm Password</span>
+          <input className="rounded border px-3 py-2" name="confirmPassword" type="password" minLength={12} maxLength={128} autoComplete="new-password" required />
+        </label>
+        <TurnstileField action="admin_setup" siteKey={turnstileSiteKey} />
 
         <button
-          className="rounded bg-black px-4 py-2 text-white disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-11 rounded bg-black px-4 py-2 text-white disabled:cursor-not-allowed disabled:opacity-60"
           type="submit"
           disabled={state.status === "submitting"}
         >
-          {state.status === "submitting" ? "Creating account..." : "Create admin account"}
+          {state.status === "submitting" ? "Creating Account…" : "Create Admin Account"}
         </button>
 
-        {state.status === "error" ? <p className="text-sm text-red-700">{state.message}</p> : null}
+        {state.status === "error" ? <p ref={statusRef} className="form-status text-sm text-red-700" role="alert" tabIndex={-1}>{state.message}</p> : null}
       </form>
 
       <p className="mt-4 text-sm text-neutral-700">

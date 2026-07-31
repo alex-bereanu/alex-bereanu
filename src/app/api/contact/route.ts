@@ -5,13 +5,13 @@ import { env } from "@/config/env";
 import { prisma } from "@/lib/db";
 import { contactSchema } from "@/lib/validators/forms";
 import { verifyMutationProtection } from "@/server/security/request-protection";
-import { checkRateLimit, getClientIp, rateLimitJsonResponse } from "@/server/security/rate-limit";
+import { buildRateLimitKey, checkRateLimit, rateLimitJsonResponse } from "@/server/security/rate-limit";
 import { verifyTurnstileToken } from "@/server/security/turnstile";
 import { sendAdminNotification } from "@/server/services/mailer";
 
 export async function POST(request: Request): Promise<NextResponse> {
   const contactRateLimit = await checkRateLimit({
-    key: `contact:${getClientIp(request)}`,
+    key: buildRateLimitKey("contact", request),
     limit: 5,
     windowMs: 15 * 60 * 1000,
   });
@@ -38,6 +38,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     const turnstileError = await verifyTurnstileToken(
       request,
       typeof body?.turnstileToken === "string" ? body.turnstileToken : null,
+      "contact",
     );
 
     if (turnstileError) {

@@ -1,8 +1,5 @@
-"use client";
-
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo } from "react";
 
 import type { HomepageMosaicPhoto } from "@/server/services/public-gallery";
 
@@ -10,7 +7,7 @@ const DESKTOP_COLUMN_COUNT = 5;
 const MAX_GRID_ROWS = 8;
 const MAX_GRID_PHOTO_COUNT = DESKTOP_COLUMN_COUNT * MAX_GRID_ROWS;
 const INITIAL_VISIBLE_COUNT = DESKTOP_COLUMN_COUNT * 2;
-const EAGER_IMAGE_COUNT = DESKTOP_COLUMN_COUNT * 4;
+const EAGER_IMAGE_COUNT = 1;
 const IMAGE_QUALITY = 75;
 const WEDDING_CATEGORY_SLUG = "weddings";
 const PORTRAIT_CATEGORY_SLUG = "portraits";
@@ -89,7 +86,7 @@ type HomepageHeroMosaicProps = {
 };
 
 export function HomepageHeroMosaic({ photos }: HomepageHeroMosaicProps) {
-  const gridPhotos = useMemo(() => buildHomepageGrid(photos), [photos]);
+  const gridPhotos = buildHomepageGrid(photos);
 
   return (
     <section id="hero" className="w-full bg-white px-0">
@@ -110,7 +107,7 @@ export function HomepageHeroMosaic({ photos }: HomepageHeroMosaicProps) {
                   className="object-cover"
                   quality={IMAGE_QUALITY}
                   loading={index < EAGER_IMAGE_COUNT ? "eager" : "lazy"}
-                  fetchPriority={index < INITIAL_VISIBLE_COUNT ? "high" : "auto"}
+                  fetchPriority={index === 0 ? "high" : "auto"}
                 />
               </Link>
             ))

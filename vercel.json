@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/internal/media-worker?limit=2",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/internal/operations",
+      "schedule": "17 3 * * *"
+    }
+  ]
+}

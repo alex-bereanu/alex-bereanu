@@ -1,15 +1,19 @@
-import { GalleryCategory, TicketStatus } from "@prisma/client";
+import { GalleryCategory, TicketStatus } from "@/generated/prisma/client";
 
 export const noticeLabels: Record<string, string> = {
   gallery_created: "Gallery created.",
   gallery_updated: "Gallery updated.",
   gallery_deleted: "Gallery deleted.",
   share_link_created: "Custom gallery link generated.",
+  share_link_revoked: "Gallery share link revoked immediately.",
   ticket_status_updated: "Ticket status updated.",
   ticket_reply_sent: "Ticket response processed.",
   asset_deleted: "Asset removed from gallery metadata.",
-  archive_deleted: "Gallery ZIP archive deleted from storage and metadata.",
+  archive_deleted: "Gallery ZIP archive removed; storage cleanup is recorded and will retry if needed.",
   site_content_updated: "Site text and image content updated.",
+  storage_deletions_retried: "Pending storage deletions were retried.",
+  media_jobs_processed: "The media processing queue was run.",
+  media_job_retried: "The failed media job was queued for another attempt.",
 };
 
 export const errorLabels: Record<string, string> = {
@@ -21,6 +25,8 @@ export const errorLabels: Record<string, string> = {
   gallery_not_found: "Gallery not found.",
   invalid_share_link_payload: "Invalid share link payload.",
   share_link_create_failed: "Unable to generate share link.",
+  share_link_revoke_failed: "Unable to revoke share link.",
+  share_link_not_found: "Active share link not found.",
   invalid_ticket_status_payload: "Invalid ticket status payload.",
   ticket_status_update_failed: "Unable to update ticket status.",
   invalid_ticket_reply_payload: "Invalid ticket reply payload.",
@@ -32,6 +38,14 @@ export const errorLabels: Record<string, string> = {
   archive_delete_failed: "Unable to delete archive.",
   invalid_site_content_payload: "Invalid site content payload.",
   site_content_update_failed: "Unable to update site content.",
+  invalid_storage_deletion_retry: "Invalid storage deletion retry request.",
+  storage_deletion_retry_failed: "Unable to retry pending storage deletions.",
+  invalid_media_job_request: "Invalid media processing request.",
+  media_job_run_failed: "Unable to run the media processing queue.",
+  media_job_retry_failed: "Unable to retry the media job.",
+  media_job_not_retryable: "That media job is not currently retryable.",
+  gallery_visibility_storage_migration_required:
+    "Move or remove gallery files before changing visibility; public and private galleries use separate storage.",
 };
 
 export const categoryLabels: Record<GalleryCategory, string> = {

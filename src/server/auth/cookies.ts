@@ -6,6 +6,7 @@ export function getSecureCookieOptions(maxAge: number) {
     secure: env.NODE_ENV === "production",
     sameSite: "strict" as const,
     path: "/",
+    priority: "high" as const,
     maxAge,
   };
 }

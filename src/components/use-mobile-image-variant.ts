@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 
-const MOBILE_IMAGE_QUERY = "(max-width: 640px)";
+const MOBILE_IMAGE_QUERY = "(max-width: 768px), (pointer: coarse)";
 
 export function useMobileImageVariant(): boolean {
-  const [isMobile, setIsMobile] = useState(false);
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window === "undefined" ? false : window.matchMedia(MOBILE_IMAGE_QUERY).matches,
+  );
 
   useEffect(() => {
     const mediaQuery = window.matchMedia(MOBILE_IMAGE_QUERY);

@@ -9,7 +9,15 @@ const CSRF_TOKEN_VERSION = "v1";
 const CSRF_HEADER = "x-csrf-token";
 
 function getCsrfSecret(): string {
-  return env.CSRF_SECRET || env.ADMIN_SESSION_SECRET || "development-csrf-secret";
+  if (env.CSRF_SECRET) {
+    return env.CSRF_SECRET;
+  }
+
+  if (env.NODE_ENV === "production") {
+    throw new Error("Missing required environment variable: CSRF_SECRET");
+  }
+
+  return "development-only-csrf-secret-change-before-production";
 }
 
 function signCsrfToken(timestamp: string, nonce: string): string {

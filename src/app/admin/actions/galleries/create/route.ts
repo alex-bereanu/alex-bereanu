@@ -1,4 +1,4 @@
-import { GalleryCategory, GalleryVisibility } from "@prisma/client";
+import { GalleryCategory, GalleryVisibility } from "@/generated/prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -7,6 +7,7 @@ import { prisma } from "@/lib/db";
 import { toSlug } from "@/lib/slug";
 import { requireAdminRequestSession } from "@/server/auth/admin-guard";
 import { verifyMutationProtection } from "@/server/security/request-protection";
+import { invalidatePublicGalleryCache } from "@/server/services/public-cache";
 
 const createGallerySchema = z.object({
   title: z.string().trim().min(2).max(160),
@@ -69,6 +70,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       },
     });
 
+    invalidatePublicGalleryCache();
     return redirectToAdmin(request, `notice=gallery_created${createCategoryQuery}`);
   } catch (error) {
     if (error instanceof z.ZodError) {

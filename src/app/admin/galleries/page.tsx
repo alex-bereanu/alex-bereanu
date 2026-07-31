@@ -1,4 +1,4 @@
-import { GalleryCategory, GalleryVisibility, Prisma } from "@prisma/client";
+import { GalleryCategory, GalleryVisibility, Prisma } from "@/generated/prisma/client";
 import Link from "next/link";
 
 import { AdminAlerts, AdminFooter, AdminNav } from "@/app/admin/_components/admin-chrome";
@@ -6,6 +6,8 @@ import { categoryLabels } from "@/app/admin/_lib/admin-options";
 import { env } from "@/config/env";
 import { AdminArchiveUpload } from "@/components/admin-archive-upload";
 import { AdminAssetManager } from "@/components/admin-asset-manager";
+import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
+import { AdminShareLinkForm } from "@/components/admin-share-link-form";
 import { prisma } from "@/lib/db";
 import { requireAdminPageSession } from "@/server/auth/admin-guard";
 import { createCsrfToken } from "@/server/security/request-protection";
@@ -62,15 +64,17 @@ export default async function AdminGalleriesPage({ searchParams }: AdminGallerie
         },
       },
       assets: {
-        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+        take: openExpanded ? 41 : 0,
         select: {
           id: true,
           originalFilename: true,
-          storageKey: true,
           smallStorageKey: true,
           mimeType: true,
           width: true,
           height: true,
+          status: true,
+          failureReason: true,
         },
       },
       shareLinks: {
@@ -82,6 +86,8 @@ export default async function AdminGalleriesPage({ searchParams }: AdminGallerie
           recipientEmail: true,
           expiresAt: true,
           isActive: true,
+          tokenHash: true,
+          revokedAt: true,
           createdAt: true,
         },
       },
@@ -91,7 +97,6 @@ export default async function AdminGalleriesPage({ searchParams }: AdminGallerie
 
   const categoryOptions = Object.values(GalleryCategory);
   const visibilityOptions = Object.values(GalleryVisibility);
-  const shareLinkBase = env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "";
   const r2PublicBase = env.R2_PUBLIC_BASE_URL?.replace(/\/$/, "") ?? null;
   const galleriesByCategory = categoryOptions.map((category) => ({
     category,
@@ -195,55 +200,68 @@ export default async function AdminGalleriesPage({ searchParams }: AdminGallerie
                       </div>
                     </summary>
 
+                    {openExpanded ? (
                     <div className="border-t p-5">
                       <div className="grid gap-4 lg:grid-cols-3">
                         <div className="space-y-3 lg:col-span-2">
                           <form className="grid gap-2" action="/admin/actions/galleries/update" method="post">
                             <input type="hidden" name="csrfToken" value={csrfToken} />
                             <input type="hidden" name="id" value={gallery.id} />
-                            <input className="rounded border px-3 py-2 text-sm" name="title" defaultValue={gallery.title} required />
-                            <input className="rounded border px-3 py-2 text-sm" name="slug" defaultValue={gallery.slug} required />
-                            <select className="rounded border px-3 py-2 text-sm" name="category" defaultValue={gallery.category}>
-                              {categoryOptions.map((option) => (
-                                <option key={option} value={option}>
-                                  {categoryLabels[option]}
-                                </option>
-                              ))}
-                            </select>
-                            <select className="rounded border px-3 py-2 text-sm" name="visibility" defaultValue={gallery.visibility}>
-                              {visibilityOptions.map((option) => (
-                                <option key={option} value={option}>
-                                  {option}
-                                </option>
-                              ))}
-                            </select>
-                            <textarea
-                              className="rounded border px-3 py-2 text-sm"
-                              name="description"
-                              defaultValue={gallery.description ?? ""}
-                              rows={3}
-                            />
+                            <label className="form-field">
+                              <span>Gallery Title</span>
+                              <input className="rounded border px-3 py-2 text-sm" name="title" defaultValue={gallery.title} autoComplete="off" required />
+                            </label>
+                            <label className="form-field">
+                              <span>URL Slug</span>
+                              <input className="rounded border px-3 py-2 text-sm" name="slug" defaultValue={gallery.slug} autoComplete="off" spellCheck={false} required />
+                            </label>
+                            <label className="form-field">
+                              <span>Category</span>
+                              <select className="rounded border px-3 py-2 text-sm" name="category" defaultValue={gallery.category}>
+                                {categoryOptions.map((option) => <option key={option} value={option}>{categoryLabels[option]}</option>)}
+                              </select>
+                            </label>
+                            <label className="form-field">
+                              <span>Visibility</span>
+                              <select className="rounded border px-3 py-2 text-sm" name="visibility" defaultValue={gallery.visibility}>
+                                {visibilityOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                              </select>
+                            </label>
+                            <label className="form-field">
+                              <span>Description <span className="font-normal text-neutral-500">(Optional)</span></span>
+                              <textarea className="rounded border px-3 py-2 text-sm" name="description" defaultValue={gallery.description ?? ""} rows={3} />
+                            </label>
                             <label className="inline-flex items-center gap-2 text-xs text-neutral-700">
                               <input type="checkbox" name="isActive" defaultChecked={gallery.isActive} /> Active
                             </label>
-                            <button className="rounded border px-3 py-1.5 text-xs font-medium" type="submit">
-                              Save changes
+                            <button className="min-h-11 rounded border px-3 py-2 text-xs font-medium" type="submit">
+                              Save Changes
                             </button>
                           </form>
 
                           <AdminAssetManager
+                            key={`${gallery.id}:${gallery.assets.slice(0, 40).map((asset) => asset.id).join(",")}`}
                             galleryId={gallery.id}
-                            assets={gallery.assets}
+                            assets={gallery.assets.slice(0, 40).map(({ smallStorageKey, ...asset }) => ({
+                              ...asset,
+                              previewUrl:
+                                asset.status === "READY" && gallery.visibility === "PUBLIC" && r2PublicBase
+                                  ? `${r2PublicBase}/${smallStorageKey}`
+                                  : null,
+                            }))}
                             csrfToken={csrfToken}
-                            r2PublicBase={r2PublicBase}
+                            initialNextCursor={gallery.assets.length > 40 ? gallery.assets[39]?.id ?? null : null}
+                            totalCount={gallery._count.assets}
                           />
 
                           <form action="/admin/actions/galleries/delete" method="post">
                             <input type="hidden" name="csrfToken" value={csrfToken} />
                             <input type="hidden" name="id" value={gallery.id} />
-                            <button className="rounded border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700" type="submit">
-                              Delete gallery
-                            </button>
+                            <ConfirmSubmitButton
+                              className="min-h-11 rounded border border-red-300 px-3 py-2 text-xs font-medium text-red-700"
+                              label="Delete Gallery"
+                              confirmLabel="Delete Gallery Permanently"
+                            />
                           </form>
                         </div>
 
@@ -252,6 +270,7 @@ export default async function AdminGalleriesPage({ searchParams }: AdminGallerie
                             <p>Assets: {gallery._count.assets}</p>
                             <p>Custom links: {gallery._count.shareLinks}</p>
                             <p>Archive: {gallery.archiveFilename ?? "none"}</p>
+                            <p>Archive status: {gallery.archiveStatus}</p>
                           </div>
 
                           <AdminArchiveUpload
@@ -263,25 +282,20 @@ export default async function AdminGalleriesPage({ searchParams }: AdminGallerie
                           <form action="/admin/actions/galleries/archive-delete" method="post">
                             <input type="hidden" name="csrfToken" value={csrfToken} />
                             <input type="hidden" name="galleryId" value={gallery.id} />
-                            <button className="rounded border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700" type="submit">
-                              Delete ZIP archive
-                            </button>
+                            <ConfirmSubmitButton
+                              className="min-h-11 rounded border border-red-300 px-3 py-2 text-xs font-medium text-red-700"
+                              label="Delete ZIP Archive"
+                              confirmLabel="Delete ZIP Permanently"
+                            />
                           </form>
 
-                          <form className="grid gap-2" action="/admin/actions/galleries/share-link" method="post">
-                            <input type="hidden" name="csrfToken" value={csrfToken} />
-                            <input type="hidden" name="galleryId" value={gallery.id} />
-                            <input className="rounded border px-3 py-2 text-xs" name="customSlug" placeholder="custom-slug (optional)" />
-                            <input className="rounded border px-3 py-2 text-xs" name="password" placeholder="Password (optional)" />
-                            <input className="rounded border px-3 py-2 text-xs" name="recipientEmail" placeholder="client@email.com" type="email" />
-                            <input className="rounded border px-3 py-2 text-xs" name="expiresAt" type="datetime-local" />
-                            <label className="inline-flex items-center gap-2 text-xs text-neutral-700">
-                              <input name="sendEmail" type="checkbox" /> Send link via email
-                            </label>
-                            <button className="rounded border px-3 py-1.5 text-xs font-medium" type="submit">
-                              Generate custom URL
-                            </button>
-                          </form>
+                          {gallery.visibility === "PRIVATE" && gallery.isActive ? (
+                            <AdminShareLinkForm csrfToken={csrfToken} galleryId={gallery.id} />
+                          ) : (
+                            <p className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                              Secure client links can only be created for active private galleries.
+                            </p>
+                          )}
                         </div>
                       </div>
 
@@ -290,27 +304,34 @@ export default async function AdminGalleriesPage({ searchParams }: AdminGallerie
                           <table className="min-w-full text-left text-xs">
                             <thead>
                               <tr className="border-b text-neutral-600">
-                                <th className="px-2 py-1">Slug</th>
+                                <th className="px-2 py-1">Capability</th>
                                 <th className="px-2 py-1">Recipient</th>
                                 <th className="px-2 py-1">Expires</th>
-                                <th className="px-2 py-1">Active</th>
+                                <th className="px-2 py-1">Status</th>
+                                <th className="px-2 py-1">Action</th>
                               </tr>
                             </thead>
                             <tbody>
                               {gallery.shareLinks.map((link) => (
                                 <tr key={link.id} className="border-b">
                                   <td className="px-2 py-1 font-medium">
-                                    {shareLinkBase ? (
-                                      <a className="underline" href={`${shareLinkBase}/g/${link.slug}`} target="_blank" rel="noreferrer">
-                                        /g/{link.slug}
-                                      </a>
-                                    ) : (
-                                      `/g/${link.slug}`
-                                    )}
+                                    {link.tokenHash ? "Hashed secure token" : "Legacy link disabled"}
                                   </td>
                                   <td className="px-2 py-1">{link.recipientEmail ?? "-"}</td>
                                   <td className="px-2 py-1">{link.expiresAt ? link.expiresAt.toLocaleString() : "-"}</td>
-                                  <td className="px-2 py-1">{link.isActive ? "Yes" : "No"}</td>
+                                  <td className="px-2 py-1">{link.isActive && !link.revokedAt ? "Active" : "Revoked"}</td>
+                                  <td className="px-2 py-1">
+                                    {link.isActive ? (
+                                      <form action="/admin/actions/galleries/share-link-revoke" method="post">
+                                        <input type="hidden" name="csrfToken" value={csrfToken} />
+                                        <input type="hidden" name="galleryId" value={gallery.id} />
+                                        <input type="hidden" name="shareLinkId" value={link.id} />
+                                        <button className="rounded border border-red-300 px-2 py-1 text-red-700" type="submit">
+                                          Revoke
+                                        </button>
+                                      </form>
+                                    ) : "—"}
+                                  </td>
                                 </tr>
                               ))}
                             </tbody>
@@ -318,6 +339,16 @@ export default async function AdminGalleriesPage({ searchParams }: AdminGallerie
                         </div>
                       ) : null}
                     </div>
+                    ) : (
+                      <div className="border-t p-4">
+                        <Link
+                          className="inline-flex rounded bg-black px-3 py-2 text-xs font-medium text-white"
+                          href={`/admin/galleries?view=expanded&galleryQ=${encodeURIComponent(gallery.slug)}`}
+                        >
+                          Manage this gallery
+                        </Link>
+                      </div>
+                    )}
                   </details>
                 ))}
               </div>

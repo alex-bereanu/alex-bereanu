@@ -2,11 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import type { TurnstileAction } from "@/lib/turnstile";
+
 type TurnstileApi = {
   render: (
     container: HTMLElement,
     options: {
       sitekey: string;
+      action: TurnstileAction;
       callback: (token: string) => void;
       "expired-callback": () => void;
       "error-callback": () => void;
@@ -23,6 +26,7 @@ type TurnstileWindow = Window & {
 
 type TurnstileFieldProps = {
   siteKey?: string;
+  action: TurnstileAction;
   className?: string;
 };
 
@@ -51,13 +55,30 @@ function loadTurnstileScript(): Promise<void> {
   return turnstileWindow.__turnstileScriptLoading;
 }
 
-export function TurnstileField({ siteKey, className }: TurnstileFieldProps) {
+export function TurnstileField({ siteKey, action, className }: TurnstileFieldProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const widgetIdRef = useRef<string | null>(null);
   const [token, setToken] = useState("");
+  const [shouldLoad, setShouldLoad] = useState(false);
 
   useEffect(() => {
-    if (!siteKey || !containerRef.current) {
+    if (!siteKey || !containerRef.current || shouldLoad) return;
+    const container = containerRef.current;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          setShouldLoad(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "300px 0px" },
+    );
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [shouldLoad, siteKey]);
+
+  useEffect(() => {
+    if (!siteKey || !shouldLoad || !containerRef.current) {
       return;
     }
 
@@ -77,6 +98,7 @@ export function TurnstileField({ siteKey, className }: TurnstileFieldProps) {
 
         widgetIdRef.current = turnstile.render(containerRef.current, {
           sitekey: siteKey,
+          action,
           callback: setToken,
           "expired-callback": () => setToken(""),
           "error-callback": () => setToken(""),
@@ -92,7 +114,7 @@ export function TurnstileField({ siteKey, className }: TurnstileFieldProps) {
         (window as TurnstileWindow).turnstile?.remove(widgetIdRef.current);
       }
     };
-  }, [siteKey]);
+  }, [action, shouldLoad, siteKey]);
 
   if (!siteKey) {
     return null;
@@ -100,7 +122,7 @@ export function TurnstileField({ siteKey, className }: TurnstileFieldProps) {
 
   return (
     <div className={className}>
-      <div ref={containerRef} />
+      <div ref={containerRef} onPointerEnter={() => setShouldLoad(true)} />
       <input type="hidden" name="cf-turnstile-response" value={token} />
     </div>
   );

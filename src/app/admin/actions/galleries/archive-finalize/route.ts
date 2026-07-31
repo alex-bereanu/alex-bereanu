@@ -1,15 +1,18 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { env } from "@/config/env";
-import { prisma } from "@/lib/db";
 import { requireAdminRequestSession } from "@/server/auth/admin-guard";
 import { verifyMutationProtection } from "@/server/security/request-protection";
+import { runMediaProcessingQueue } from "@/server/services/media-processing";
+import { queueUploadedSessions } from "@/server/services/media-upload-sessions";
+
+export const runtime = "nodejs";
+export const maxDuration = 300;
 
 const requestSchema = z.object({
   galleryId: z.string().trim().min(1),
-  objectKey: z.string().trim().min(1),
-  filename: z.string().trim().min(1).max(260),
+  uploadSessionId: z.string().uuid(),
 });
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -31,36 +34,22 @@ export async function POST(request: Request): Promise<NextResponse> {
     }
 
     const parsed = requestSchema.parse(body);
-
-    const updated = await prisma.gallery.update({
-      where: { id: parsed.galleryId },
-      data: {
-        archiveObjectKey: parsed.objectKey,
-        archiveFilename: parsed.filename,
-        archiveUploadedAt: new Date(),
-      },
-      select: {
-        id: true,
-        archiveObjectKey: true,
-      },
+    await queueUploadedSessions({
+      galleryId: parsed.galleryId,
+      sessionIds: [parsed.uploadSessionId],
+      kind: "GALLERY_ARCHIVE",
     });
 
-    return NextResponse.json({
-      ok: true,
-      galleryId: updated.id,
-      archiveObjectKey: updated.archiveObjectKey,
+    after(async () => {
+      await runMediaProcessingQueue(1);
     });
+
+    return NextResponse.json({ ok: true, queuedCount: 1 });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        {
-          error: "Invalid archive finalize payload.",
-          issues: error.issues,
-        },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "Invalid archive finalize payload.", issues: error.issues }, { status: 400 });
     }
 
-    return NextResponse.json({ error: "Unable to finalize archive upload." }, { status: 500 });
+    return NextResponse.json({ error: "Unable to queue archive verification." }, { status: 400 });
   }
 }

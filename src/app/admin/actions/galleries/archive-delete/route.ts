@@ -3,9 +3,13 @@ import { z } from "zod";
 
 import { env } from "@/config/env";
 import { prisma } from "@/lib/db";
-import { deleteObjectByKey } from "@/server/services/storage";
 import { requireAdminRequestSession } from "@/server/auth/admin-guard";
 import { verifyMutationProtection } from "@/server/security/request-protection";
+import {
+  attemptStorageDeletions,
+  enqueueStorageDeletions,
+  type StorageDeletionTarget,
+} from "@/server/services/storage-deletions";
 
 const deleteArchiveSchema = z.object({
   galleryId: z.string().trim().min(1),
@@ -43,6 +47,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       select: {
         id: true,
         archiveObjectKey: true,
+        archiveStorageArea: true,
       },
     });
 
@@ -50,18 +55,31 @@ export async function POST(request: Request): Promise<NextResponse> {
       return redirectToAdmin(request, "error=gallery_not_found");
     }
 
-    if (gallery.archiveObjectKey) {
-      await deleteObjectByKey(gallery.archiveObjectKey);
-    }
+    const deletionTargets: StorageDeletionTarget[] = gallery.archiveObjectKey
+      ? [
+          {
+            area: gallery.archiveStorageArea,
+            objectKey: gallery.archiveObjectKey,
+          },
+        ]
+      : [];
 
-    await prisma.gallery.update({
-      where: { id: gallery.id },
-      data: {
-        archiveObjectKey: null,
-        archiveFilename: null,
-        archiveUploadedAt: null,
-      },
+    await prisma.$transaction(async (transaction) => {
+      await enqueueStorageDeletions(transaction, deletionTargets);
+      await transaction.gallery.update({
+        where: { id: gallery.id },
+        data: {
+          archiveObjectKey: null,
+          archiveFilename: null,
+          archiveUploadedAt: null,
+          archiveStatus: "NONE",
+          archiveContentHash: null,
+          archiveSizeBytes: null,
+          archiveFailureReason: null,
+        },
+      });
     });
+    await attemptStorageDeletions(deletionTargets);
 
     return redirectToAdmin(request, "notice=archive_deleted");
   } catch (error) {

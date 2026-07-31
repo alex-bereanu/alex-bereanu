@@ -1,4 +1,4 @@
-import { Prisma, TicketStatus } from "@prisma/client";
+import { Prisma, TicketStatus } from "@/generated/prisma/client";
 
 import { AdminAlerts, AdminFooter, AdminNav } from "@/app/admin/_components/admin-chrome";
 import { resolveTicketStatusFilter } from "@/app/admin/_lib/admin-options";

@@ -1,4 +1,4 @@
-import { GalleryCategory, GalleryVisibility } from "@prisma/client";
+import { GalleryCategory, GalleryVisibility, MediaJobStatus, StorageDeletionStatus } from "@/generated/prisma/client";
 import Link from "next/link";
 
 import { AdminAlerts, AdminFooter, AdminNav } from "@/app/admin/_components/admin-chrome";
@@ -39,10 +39,36 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
   const createCategoryFilter = resolveCreateCategory(resolvedSearchParams.createCategory);
 
-  const [activeGalleriesCount, pendingTicketsCount, activeLinksCount, siteContentEntries] = await Promise.all([
+  const [
+    activeGalleriesCount,
+    pendingTicketsCount,
+    activeLinksCount,
+    pendingDeletionCount,
+    pendingMediaJobCount,
+    failedMediaJobs,
+    siteContentEntries,
+  ] = await Promise.all([
     prisma.gallery.count({ where: { isActive: true } }),
     prisma.ticket.count({ where: { status: { in: ["NEW", "IN_PROGRESS"] } } }),
-    prisma.galleryShareLink.count({ where: { isActive: true } }),
+    prisma.galleryShareLink.count({ where: { isActive: true, revokedAt: null } }),
+    prisma.storageDeletionJob.count({ where: { status: StorageDeletionStatus.PENDING } }),
+    prisma.mediaProcessingJob.count({
+      where: { status: { in: [MediaJobStatus.PENDING, MediaJobStatus.PROCESSING, MediaJobStatus.RETRY] } },
+    }),
+    prisma.mediaProcessingJob.findMany({
+      where: { status: MediaJobStatus.FAILED },
+      orderBy: { updatedAt: "desc" },
+      take: 10,
+      select: {
+        id: true,
+        type: true,
+        attempts: true,
+        lastError: true,
+        updatedAt: true,
+        asset: { select: { originalFilename: true } },
+        uploadSession: { select: { originalFilename: true } },
+      },
+    }),
     getEditableSiteContentEntries(),
   ]);
 
@@ -63,6 +89,72 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       </header>
 
       <AdminAlerts error={resolvedSearchParams.error} notice={resolvedSearchParams.notice} />
+
+      {pendingDeletionCount > 0 ? (
+        <section className="flex flex-col gap-3 rounded border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 sm:flex-row sm:items-center sm:justify-between">
+          <p>
+            {pendingDeletionCount} storage deletion {pendingDeletionCount === 1 ? "job is" : "jobs are"} waiting to be retried.
+          </p>
+          <form action="/admin/actions/storage-deletions/retry" method="post">
+            <input type="hidden" name="csrfToken" value={csrfToken} />
+            <input type="hidden" name="limit" value="200" />
+            <button className="rounded bg-black px-4 py-2 font-medium text-white" type="submit">
+              Retry deletions
+            </button>
+          </form>
+        </section>
+      ) : null}
+
+      <section className="rounded border bg-white p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold">Media processing</h2>
+            <p className="mt-1 text-xs text-neutral-600">
+              {pendingMediaJobCount} queued or active {pendingMediaJobCount === 1 ? "job" : "jobs"}. Uploads become visible only after verification succeeds.
+            </p>
+          </div>
+          <form action="/admin/actions/media-jobs/run" method="post">
+            <input type="hidden" name="csrfToken" value={csrfToken} />
+            <input type="hidden" name="limit" value="5" />
+            <button className="rounded bg-black px-4 py-2 text-sm font-medium text-white" type="submit">
+              Process up to 5 jobs
+            </button>
+          </form>
+        </div>
+
+        {failedMediaJobs.length > 0 ? (
+          <div className="mt-4 overflow-x-auto">
+            <table className="min-w-full text-left text-xs">
+              <thead>
+                <tr className="border-b text-neutral-600">
+                  <th className="px-2 py-2">File</th>
+                  <th className="px-2 py-2">Job</th>
+                  <th className="px-2 py-2">Safe failure code</th>
+                  <th className="px-2 py-2">Attempts</th>
+                  <th className="px-2 py-2">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {failedMediaJobs.map((job) => (
+                  <tr key={job.id} className="border-b">
+                    <td className="px-2 py-2">{job.asset?.originalFilename ?? job.uploadSession?.originalFilename ?? "Unknown file"}</td>
+                    <td className="px-2 py-2">{job.type}</td>
+                    <td className="px-2 py-2 font-mono">{job.lastError ?? "unspecified_failure"}</td>
+                    <td className="px-2 py-2">{job.attempts}</td>
+                    <td className="px-2 py-2">
+                      <form action="/admin/actions/media-jobs/retry" method="post">
+                        <input type="hidden" name="csrfToken" value={csrfToken} />
+                        <input type="hidden" name="jobId" value={job.id} />
+                        <button className="rounded border px-2 py-1 font-medium" type="submit">Retry</button>
+                      </form>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </section>
 
       <section className="grid gap-4 sm:grid-cols-4">
         <Link className="rounded border bg-white p-4 transition hover:bg-neutral-50" href="/admin/galleries">

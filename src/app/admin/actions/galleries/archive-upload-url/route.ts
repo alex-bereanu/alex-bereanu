@@ -2,21 +2,24 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { env } from "@/config/env";
-import { prisma } from "@/lib/db";
-import { createSignedUploadUrl } from "@/server/services/storage";
+import {
+  createSignedUploadUrl,
+  getObjectCacheControl,
+} from "@/server/services/storage";
 import { requireAdminRequestSession } from "@/server/auth/admin-guard";
 import { verifyMutationProtection } from "@/server/security/request-protection";
 import {
   MAX_ARCHIVE_SIZE_BYTES,
-  sanitizeFilename,
   validateZipUploadMetadata,
 } from "@/server/security/upload-validation";
+import { createGalleryUploadSession } from "@/server/services/media-upload-sessions";
 
 const requestSchema = z.object({
   galleryId: z.string().trim().min(1),
   filename: z.string().trim().min(1).max(260),
   contentType: z.string().trim().min(1).max(120),
-  sizeBytes: z.number().int().positive().max(MAX_ARCHIVE_SIZE_BYTES).optional(),
+  sizeBytes: z.number().int().positive().max(MAX_ARCHIVE_SIZE_BYTES),
+  sha256: z.string().trim().regex(/^[a-f0-9]{64}$/),
 });
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -38,6 +41,10 @@ export async function POST(request: Request): Promise<NextResponse> {
     }
 
     const parsed = requestSchema.parse(body);
+
+    if (!env.MEDIA_SCANNER_URL || !env.MEDIA_SCANNER_SECRET) {
+      return NextResponse.json({ error: "Archive malware scanning is not configured." }, { status: 503 });
+    }
     const zipValidationError = validateZipUploadMetadata({
       filename: parsed.filename,
       contentType: parsed.contentType,
@@ -48,28 +55,36 @@ export async function POST(request: Request): Promise<NextResponse> {
       return NextResponse.json({ error: zipValidationError }, { status: 400 });
     }
 
-    const gallery = await prisma.gallery.findUnique({
-      where: { id: parsed.galleryId },
-      select: { id: true },
+    const session = await createGalleryUploadSession({
+      galleryId: parsed.galleryId,
+      kind: "GALLERY_ARCHIVE",
+      filename: parsed.filename,
+      contentType: parsed.contentType,
+      sizeBytes: parsed.sizeBytes,
+      sha256: parsed.sha256,
     });
 
-    if (!gallery) {
+    if (!session) {
       return NextResponse.json({ error: "Gallery not found." }, { status: 404 });
     }
-
-    const sanitizedFilename = sanitizeFilename(parsed.filename);
-
-    const objectKey = `galleries/${parsed.galleryId}/archives/${Date.now()}-${sanitizedFilename}`;
     const uploadUrl = await createSignedUploadUrl({
-      objectKey,
+      area: session.storageArea,
+      objectKey: session.objectKey,
       contentType: parsed.contentType,
       expiresInSeconds: 60 * 20,
+      metadata: session.metadata,
     });
 
     return NextResponse.json({
       uploadUrl,
-      objectKey,
-      filename: sanitizedFilename,
+      uploadSessionId: session.id,
+      objectKey: session.objectKey,
+      filename: session.filename,
+      cacheControl: getObjectCacheControl(session.storageArea),
+      requiredHeaders: {
+        "x-amz-meta-upload-session-id": session.id,
+        "x-amz-meta-expected-sha256": parsed.sha256,
+      },
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

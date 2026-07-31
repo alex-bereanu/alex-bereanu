@@ -1,10 +1,10 @@
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 enum GalleryCategory {
@@ -45,6 +45,60 @@ enum ActorType {
   SYSTEM
 }
 
+enum StorageArea {
+  PUBLIC
+  PRIVATE
+}
+
+enum StorageDeletionStatus {
+  PENDING
+  COMPLETED
+}
+
+enum MediaStatus {
+  UPLOADING
+  PROCESSING
+  READY
+  FAILED
+  DELETING
+}
+
+enum ArchiveStatus {
+  NONE
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum MediaUploadKind {
+  GALLERY_ASSET
+  GALLERY_ARCHIVE
+}
+
+enum MediaUploadStatus {
+  CREATED
+  UPLOADED
+  PROCESSING
+  COMPLETED
+  REJECTED
+  EXPIRED
+  ABORTED
+}
+
+enum MediaJobType {
+  INGEST_IMAGE
+  REBUILD_IMAGE
+  VERIFY_ARCHIVE
+}
+
+enum MediaJobStatus {
+  PENDING
+  PROCESSING
+  RETRY
+  COMPLETED
+  FAILED
+}
+
 model AdminUser {
   id           String   @id @default(cuid())
   username     String   @unique
@@ -53,70 +107,200 @@ model AdminUser {
   updatedAt    DateTime @updatedAt
 }
 
-model Gallery {
-  id                String            @id @default(cuid())
-  title             String
-  slug              String            @unique
-  description       String?
-  category          GalleryCategory
-  visibility        GalleryVisibility @default(PUBLIC)
-  isActive          Boolean           @default(true)
-  archiveObjectKey  String?
-  archiveFilename   String?
-  archiveUploadedAt DateTime?
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+model AdminSession {
+  id         String    @id @default(cuid())
+  tokenHash  String    @unique
+  subject    String
+  provider   String
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  lastSeenAt DateTime  @default(now())
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
-  assets     GalleryAsset[]
-  shareLinks GalleryShareLink[]
+  @@index([subject, revokedAt])
+  @@index([expiresAt])
+}
+
+model Gallery {
+  id                   String            @id @default(cuid())
+  title                String
+  slug                 String            @unique
+  description          String?
+  category             GalleryCategory
+  visibility           GalleryVisibility @default(PUBLIC)
+  isActive             Boolean           @default(true)
+  archiveObjectKey     String?
+  archiveStorageArea   StorageArea       @default(PRIVATE)
+  archiveFilename      String?
+  archiveUploadedAt    DateTime?
+  archiveStatus        ArchiveStatus     @default(NONE)
+  archiveContentHash   String?
+  archiveSizeBytes     BigInt?
+  archiveFailureReason String?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  assets         GalleryAsset[]
+  shareLinks     GalleryShareLink[]
+  uploadSessions MediaUploadSession[]
 
   @@index([category, isActive])
 }
 
 model GalleryAsset {
-  id               String    @id @default(cuid())
-  galleryId        String
-  storageKey       String    @unique
-  smallStorageKey  String?   @unique
-  smallWidth       Int?
-  smallHeight      Int?
-  smallSizeBytes   BigInt?
-  mediumStorageKey String?   @unique
-  mediumWidth      Int?
-  mediumHeight     Int?
-  mediumSizeBytes  BigInt?
-  originalFilename String
-  mimeType         String
-  fileExtension    String?
-  sizeBytes        BigInt
-  width            Int?
-  height           Int?
-  capturedAt       DateTime?
-  sortOrder        Int       @default(0)
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id                 String      @id @default(cuid())
+  galleryId          String
+  storageKey         String      @unique
+  sourceStorageArea  StorageArea @default(PRIVATE)
+  smallStorageKey    String?     @unique
+  smallWidth         Int?
+  smallHeight        Int?
+  smallSizeBytes     BigInt?
+  mediumStorageKey   String?     @unique
+  mediumWidth        Int?
+  mediumHeight       Int?
+  mediumSizeBytes    BigInt?
+  largeStorageKey    String?     @unique
+  largeWidth         Int?
+  largeHeight        Int?
+  largeSizeBytes     BigInt?
+  status             MediaStatus @default(UPLOADING)
+  contentHash        String?
+  placeholderDataUrl String?
+  sourceVerifiedAt   DateTime?
+  readyAt            DateTime?
+  failureReason      String?
+  processingAttempts Int         @default(0)
+  originalFilename   String
+  mimeType           String
+  fileExtension      String?
+  sizeBytes          BigInt
+  width              Int?
+  height             Int?
+  capturedAt         DateTime?
+  sortOrder          Int         @default(0)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
 
-  gallery Gallery @relation(fields: [galleryId], references: [id], onDelete: Cascade)
+  gallery        Gallery              @relation(fields: [galleryId], references: [id], onDelete: Cascade)
+  processingJobs MediaProcessingJob[]
 
   @@index([galleryId, sortOrder])
+  @@index([galleryId, status, sortOrder])
+}
+
+model MediaUploadSession {
+  id                     String            @id @default(uuid())
+  galleryId              String
+  kind                   MediaUploadKind
+  status                 MediaUploadStatus @default(CREATED)
+  storageArea            StorageArea
+  quarantineObjectKey    String            @unique
+  reservedAssetId        String?           @unique
+  originalFilename       String
+  expectedContentType    String
+  expectedSizeBytes      BigInt
+  expectedSha256         String
+  multipartUploadId      String?           @unique
+  multipartPartSizeBytes Int?
+  multipartStartedAt     DateTime?
+  expiresAt              DateTime
+  uploadedAt             DateTime?
+  completedAt            DateTime?
+  failureReason          String?
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+
+  gallery       Gallery             @relation(fields: [galleryId], references: [id], onDelete: Cascade)
+  processingJob MediaProcessingJob?
+
+  @@index([galleryId, status, createdAt])
+  @@index([status, expiresAt])
+}
+
+model MediaProcessingJob {
+  id              String         @id @default(cuid())
+  type            MediaJobType
+  status          MediaJobStatus @default(PENDING)
+  uploadSessionId String?        @unique
+  assetId         String?
+  attempts        Int            @default(0)
+  maxAttempts     Int            @default(5)
+  availableAt     DateTime       @default(now())
+  lockedAt        DateTime?
+  lastError       String?
+  completedAt     DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  uploadSession MediaUploadSession? @relation(fields: [uploadSessionId], references: [id], onDelete: Cascade)
+  asset         GalleryAsset?       @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([status, availableAt, createdAt])
+  @@index([assetId, status])
 }
 
 model GalleryShareLink {
   id             String    @id @default(cuid())
   galleryId      String
   slug           String    @unique
+  tokenHash      String?   @unique
+  grantVersion   Int       @default(1)
   passwordHash   String?
   recipientEmail String?
   expiresAt      DateTime?
   maxDownloads   Int?
   downloadCount  Int       @default(0)
   isActive       Boolean   @default(true)
+  revokedAt      DateTime?
+  lastAccessedAt DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
   gallery Gallery @relation(fields: [galleryId], references: [id], onDelete: Cascade)
 
   @@index([galleryId, isActive])
+}
+
+model StorageDeletionJob {
+  id          String                @id @default(cuid())
+  storageArea StorageArea
+  objectKey   String
+  status      StorageDeletionStatus @default(PENDING)
+  attempts    Int                   @default(0)
+  lastError   String?
+  completedAt DateTime?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  @@unique([storageArea, objectKey])
+  @@index([status, createdAt])
+}
+
+model RateLimitBucket {
+  key       String   @id
+  count     Int
+  resetAt   DateTime
+  updatedAt DateTime @updatedAt
+
+  @@index([resetAt])
+}
+
+model SecurityAuditEvent {
+  id           String   @id @default(cuid())
+  eventType    String
+  outcome      String
+  actorHash    String?
+  ipHash       String?
+  resourceType String?
+  resourceId   String?
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  @@index([eventType, createdAt])
+  @@index([resourceType, resourceId, createdAt])
+  @@index([createdAt])
 }
 
 model Ticket {

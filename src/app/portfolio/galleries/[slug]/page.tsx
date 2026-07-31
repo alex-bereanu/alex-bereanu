@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { PublicGalleryMosaic } from "@/components/public-gallery-mosaic";
+import { PhotoResourceHints } from "@/components/photo-resource-hints";
 import { SiteFooter } from "@/components/site-footer";
+import { SiteHeader } from "@/components/site-header";
 import { env } from "@/config/env";
 import { headerCategoryLinks } from "@/lib/site-data";
 import { getPublicGalleryBySlug } from "@/server/services/public-gallery";
@@ -12,7 +13,7 @@ type PublicGalleryPageProps = {
   params: Promise<{ slug: string }>;
 };
 
-export const dynamic = "force-dynamic";
+export const revalidate = 900;
 
 export async function generateMetadata({ params }: PublicGalleryPageProps): Promise<Metadata> {
   const { slug } = await params;
@@ -42,26 +43,15 @@ export default async function PublicGalleryPage({ params }: PublicGalleryPagePro
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-12 px-4 py-8 sm:px-6 lg:px-8">
-      <header className="site-header rounded p-4 backdrop-blur">
-        <div className="flex flex-col items-center gap-4">
-          <Link className="header-brand" href="/">
-            Alex Bereanu
-          </Link>
-          <nav className="header-nav text-sm">
-            <Link href="/" className="header-link">
-              Home
-            </Link>
-            {headerCategoryLinks.map((category) => (
-              <Link key={category.href} href={category.href} className="header-link">
-                {category.label}
-              </Link>
-            ))}
-            <Link href={`/portfolio/${gallery.categorySlug}`} className="header-link">
-              Back
-            </Link>
-          </nav>
-        </div>
-      </header>
+      <PhotoResourceHints publicImageOrigin={env.R2_PUBLIC_BASE_URL ? new URL(env.R2_PUBLIC_BASE_URL).origin : undefined} />
+      <SiteHeader
+        className="rounded p-4 backdrop-blur"
+        links={[
+          { href: "/", label: "Home" },
+          ...headerCategoryLinks,
+          { href: `/portfolio/${gallery.categorySlug}`, label: `Back to ${gallery.categoryTitle}` },
+        ]}
+      />
 
       <main className="flex flex-col gap-10">
         <section className="mx-auto w-full max-w-4xl space-y-3 text-center">
@@ -77,7 +67,12 @@ export default async function PublicGalleryPage({ params }: PublicGalleryPagePro
         ) : null}
 
         <section aria-label={`${gallery.title} photos`}>
-          <PublicGalleryMosaic photos={gallery.photos} />
+          <PublicGalleryMosaic
+            photos={gallery.photos}
+            initialNextCursor={gallery.nextCursor}
+            loadMoreUrl={`/api/public-galleries/${encodeURIComponent(gallery.slug)}/assets`}
+            totalCount={gallery.assetCount}
+          />
         </section>
       </main>
 

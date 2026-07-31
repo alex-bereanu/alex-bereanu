@@ -1,7 +1,14 @@
 import sharp from "sharp";
 
 import { prisma } from "@/lib/db";
-import { getObjectBuffer, uploadObject } from "@/server/services/storage";
+import { MAX_IMAGE_DIMENSION, MAX_IMAGE_PIXEL_COUNT } from "@/lib/upload-limits";
+import {
+  deleteObjectByKey,
+  getObjectBuffer,
+  getStorageAreaForGalleryVisibility,
+  type StorageArea,
+  uploadObject,
+} from "@/server/services/storage";
 
 const SMALL_IMAGE_MAX_SIZE = 480;
 const MEDIUM_IMAGE_MAX_SIZE = 1600;
@@ -50,7 +57,11 @@ async function generateVariant(input: {
   maxSize: number;
   quality: number;
 }): Promise<GeneratedVariant> {
-  const { data, info } = await sharp(input.originalBuffer, { animated: false })
+  const { data, info } = await sharp(input.originalBuffer, {
+    animated: false,
+    failOn: "warning",
+    limitInputPixels: MAX_IMAGE_PIXEL_COUNT,
+  })
     .rotate()
     .resize({
       width: input.maxSize,
@@ -74,6 +85,25 @@ async function generateVariant(input: {
 }
 
 async function generateImageVariants(originalBuffer: Buffer, originalObjectKey: string): Promise<GeneratedVariants> {
+  const metadata = await sharp(originalBuffer, {
+    animated: false,
+    failOn: "warning",
+    limitInputPixels: MAX_IMAGE_PIXEL_COUNT,
+  }).metadata();
+  const width = metadata.width ?? 0;
+  const height = metadata.height ?? 0;
+
+  if (
+    !width ||
+    !height ||
+    width > MAX_IMAGE_DIMENSION ||
+    height > MAX_IMAGE_DIMENSION ||
+    width * height > MAX_IMAGE_PIXEL_COUNT ||
+    (metadata.pages ?? 1) > 1
+  ) {
+    throw new Error("site_content_image_dimensions_or_animation_rejected");
+  }
+
   const [small, medium] = await Promise.all([
     generateVariant({
       originalBuffer,
@@ -94,14 +124,33 @@ async function generateImageVariants(originalBuffer: Buffer, originalObjectKey: 
   return { small, medium };
 }
 
-async function uploadVariants(variants: GeneratedVariants): Promise<void> {
+export async function prepareSiteContentImageVariants(
+  originalBuffer: Buffer,
+  objectKeySeed: string,
+): Promise<GeneratedVariants> {
+  const variants = await generateImageVariants(originalBuffer, objectKeySeed);
+  try {
+    await uploadVariants(variants, "PUBLIC");
+  } catch (error) {
+    await Promise.allSettled([
+      deleteObjectByKey(variants.small.objectKey, "PUBLIC"),
+      deleteObjectByKey(variants.medium.objectKey, "PUBLIC"),
+    ]);
+    throw error;
+  }
+  return variants;
+}
+
+async function uploadVariants(variants: GeneratedVariants, area: StorageArea): Promise<void> {
   await Promise.all([
     uploadObject({
+      area,
       objectKey: variants.small.objectKey,
       contentType: VARIANT_CONTENT_TYPE,
       body: variants.small.buffer,
     }),
     uploadObject({
+      area,
       objectKey: variants.medium.objectKey,
       contentType: VARIANT_CONTENT_TYPE,
       body: variants.medium.buffer,
@@ -132,15 +181,17 @@ async function processGalleryAssetVariant(asset: {
   storageKey: string;
   smallStorageKey: string | null;
   mediumStorageKey: string | null;
+  gallery: { visibility: "PUBLIC" | "PRIVATE" };
 }): Promise<void> {
   if (asset.smallStorageKey && asset.mediumStorageKey) {
     return;
   }
 
-  const originalBuffer = await getObjectBuffer(asset.storageKey);
+  const storageArea = getStorageAreaForGalleryVisibility(asset.gallery.visibility);
+  const originalBuffer = await getObjectBuffer(asset.storageKey, storageArea);
   const variants = await generateImageVariants(originalBuffer, asset.storageKey);
 
-  await uploadVariants(variants);
+  await uploadVariants(variants, storageArea);
 
   await prisma.galleryAsset.update({
     where: { id: asset.id },
@@ -173,6 +224,9 @@ export async function processGalleryAssetVariants(assetIds: string[]): Promise<v
       storageKey: true,
       smallStorageKey: true,
       mediumStorageKey: true,
+      gallery: {
+        select: { visibility: true },
+      },
     },
   });
 
@@ -190,7 +244,7 @@ export async function processSiteContentImageVariants(key: string, objectKey: st
     const originalBuffer = await getObjectBuffer(objectKey);
     const variants = await generateImageVariants(originalBuffer, objectKey);
 
-    await uploadVariants(variants);
+    await uploadVariants(variants, "PUBLIC");
 
     await prisma.siteContent.updateMany({
       where: {

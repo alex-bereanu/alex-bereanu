@@ -1,4 +1,4 @@
-import { TicketStatus } from "@prisma/client";
+import { TicketStatus } from "@/generated/prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 

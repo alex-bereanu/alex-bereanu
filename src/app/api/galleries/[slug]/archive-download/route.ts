@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { createSignedDownloadUrl } from "@/server/services/storage";
-import { recordGalleryShareLinkDownload, resolveGalleryAccessBySlug } from "@/server/services/gallery-access";
+import {
+  galleryCapabilityMatchesAccess,
+  recordGalleryShareLinkDownload,
+  resolveGalleryAccessFromCookie,
+} from "@/server/services/gallery-access";
 
 type RouteProps = {
   params: Promise<{ slug: string }>;
@@ -9,9 +13,9 @@ type RouteProps = {
 
 export async function GET(_: Request, { params }: RouteProps): Promise<NextResponse> {
   const { slug } = await params;
-  const access = await resolveGalleryAccessBySlug(slug);
+  const access = await resolveGalleryAccessFromCookie();
 
-  if (!access || !access.archiveObjectKey) {
+  if (!access || !galleryCapabilityMatchesAccess(slug, access) || !access.archiveObjectKey) {
     return NextResponse.json({ error: "Archive not available." }, { status: 404 });
   }
 
@@ -22,9 +26,10 @@ export async function GET(_: Request, { params }: RouteProps): Promise<NextRespo
   }
 
   const signedUrl = await createSignedDownloadUrl({
+    area: "PRIVATE",
     objectKey: access.archiveObjectKey,
-    downloadFilename: access.archiveFilename ?? `${access.slug}.zip`,
-    expiresInSeconds: 60 * 10,
+    downloadFilename: access.archiveFilename ?? "gallery.zip",
+    expiresInSeconds: 60 * 2,
   });
 
   return NextResponse.redirect(signedUrl, 302);

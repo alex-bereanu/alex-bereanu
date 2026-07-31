@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { resetTurnstileInForm, TurnstileField } from "@/components/turnstile-field";
@@ -14,6 +14,7 @@ type FormState =
 type AdminLoginFormProps = {
   csrfToken: string;
   googleOAuthEnabled?: boolean;
+  passwordLoginEnabled?: boolean;
   turnstileSiteKey?: string;
 };
 
@@ -62,7 +63,12 @@ function getSafeAdminNextPath(value: string | null): string {
   return "/admin";
 }
 
-export function AdminLoginForm({ csrfToken, googleOAuthEnabled = false, turnstileSiteKey }: AdminLoginFormProps) {
+export function AdminLoginForm({
+  csrfToken,
+  googleOAuthEnabled = false,
+  passwordLoginEnabled = false,
+  turnstileSiteKey,
+}: AdminLoginFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = useMemo(() => getSafeAdminNextPath(searchParams.get("next")), [searchParams]);
@@ -73,6 +79,11 @@ export function AdminLoginForm({ csrfToken, googleOAuthEnabled = false, turnstil
   const oauthErrorMessage = useMemo(() => getOAuthErrorMessage(searchParams.get("error")), [searchParams]);
 
   const [state, setState] = useState<FormState>({ status: "idle" });
+  const statusRef = useRef<HTMLParagraphElement | null>(null);
+
+  useEffect(() => {
+    if (state.status === "error" || oauthErrorMessage) statusRef.current?.focus();
+  }, [oauthErrorMessage, state.status]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -118,7 +129,9 @@ export function AdminLoginForm({ csrfToken, googleOAuthEnabled = false, turnstil
   return (
     <div className="rounded border bg-white p-6">
       <h1 className="text-2xl font-semibold">Admin sign in</h1>
-      <p className="mt-2 text-sm text-neutral-700">Use your admin username and password to continue.</p>
+      <p className="mt-2 text-sm text-neutral-700">
+        {googleOAuthEnabled ? "Use your approved Google account to continue." : "Sign in to continue."}
+      </p>
 
       {googleOAuthEnabled && (
         <div className="mt-6 grid gap-4">
@@ -129,34 +142,42 @@ export function AdminLoginForm({ csrfToken, googleOAuthEnabled = false, turnstil
             Continue with Google
           </Link>
 
-          <div className="flex items-center gap-3 text-xs uppercase tracking-wide text-neutral-500">
-            <span className="h-px flex-1 bg-neutral-200" />
-            <span>or</span>
-            <span className="h-px flex-1 bg-neutral-200" />
-          </div>
+          {passwordLoginEnabled ? (
+            <div className="flex items-center gap-3 text-xs uppercase tracking-wide text-neutral-500">
+              <span className="h-px flex-1 bg-neutral-200" />
+              <span>or</span>
+              <span className="h-px flex-1 bg-neutral-200" />
+            </div>
+          ) : null}
         </div>
       )}
 
-      <form className="mt-6 grid gap-3" onSubmit={handleSubmit}>
-        <input className="rounded border px-3 py-2" name="username" placeholder="Username" required />
-        <input className="rounded border px-3 py-2" name="password" type="password" placeholder="Password" required />
-        <TurnstileField siteKey={turnstileSiteKey} />
+      {passwordLoginEnabled ? <form className="mt-6 grid gap-3" onSubmit={handleSubmit}>
+        <label className="form-field">
+          <span>Username</span>
+          <input className="rounded border px-3 py-2" name="username" autoComplete="username" spellCheck={false} required />
+        </label>
+        <label className="form-field">
+          <span>Password</span>
+          <input className="rounded border px-3 py-2" name="password" type="password" autoComplete="current-password" required />
+        </label>
+        <TurnstileField action="admin_login" siteKey={turnstileSiteKey} />
 
         <button
-          className="rounded bg-black px-4 py-2 text-white disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-11 rounded bg-black px-4 py-2 text-white disabled:cursor-not-allowed disabled:opacity-60"
           type="submit"
           disabled={state.status === "submitting"}
         >
-          {state.status === "submitting" ? "Signing in..." : "Sign in"}
+          {state.status === "submitting" ? "Signing In…" : "Sign In"}
         </button>
 
-        {state.status === "error" && <p className="text-sm text-red-700">{state.message}</p>}
-        {state.status !== "error" && oauthErrorMessage && <p className="text-sm text-red-700">{oauthErrorMessage}</p>}
-      </form>
+        {state.status === "error" ? <p ref={statusRef} className="form-status text-sm text-red-700" role="alert" tabIndex={-1}>{state.message}</p> : null}
+        {state.status !== "error" && oauthErrorMessage ? <p ref={statusRef} className="form-status text-sm text-red-700" role="alert" tabIndex={-1}>{oauthErrorMessage}</p> : null}
+      </form> : null}
 
-      <p className="mt-4 text-sm text-neutral-700">
+      {passwordLoginEnabled ? <p className="mt-4 text-sm text-neutral-700">
         First time setup? <Link className="underline" href="/admin/setup">Create admin account</Link>
-      </p>
+      </p> : null}
     </div>
   );
 }

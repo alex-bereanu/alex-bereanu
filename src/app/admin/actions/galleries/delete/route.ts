@@ -5,7 +5,13 @@ import { env } from "@/config/env";
 import { prisma } from "@/lib/db";
 import { requireAdminRequestSession } from "@/server/auth/admin-guard";
 import { verifyMutationProtection } from "@/server/security/request-protection";
-import { deleteObjectByKey } from "@/server/services/storage";
+import { getStorageAreaForGalleryVisibility } from "@/server/services/storage";
+import { invalidatePublicGalleryCache } from "@/server/services/public-cache";
+import {
+  attemptStorageDeletions,
+  enqueueStorageDeletions,
+  type StorageDeletionTarget,
+} from "@/server/services/storage-deletions";
 
 const deleteGallerySchema = z.object({
   id: z.string().trim().min(1),
@@ -40,11 +46,24 @@ export async function POST(request: Request): Promise<NextResponse> {
       where: { id: parsed.id },
       select: {
         archiveObjectKey: true,
+        archiveStorageArea: true,
+        visibility: true,
         assets: {
           select: {
             storageKey: true,
+            sourceStorageArea: true,
             smallStorageKey: true,
             mediumStorageKey: true,
+            largeStorageKey: true,
+          },
+        },
+        uploadSessions: {
+          where: {
+            status: { notIn: ["COMPLETED", "EXPIRED"] },
+          },
+          select: {
+            storageArea: true,
+            quarantineObjectKey: true,
           },
         },
       },
@@ -54,13 +73,35 @@ export async function POST(request: Request): Promise<NextResponse> {
       return redirectToAdmin(request, "error=gallery_not_found");
     }
 
-    const objectKeys = [
-      gallery.archiveObjectKey,
-      ...gallery.assets.flatMap((asset) => [asset.storageKey, asset.smallStorageKey, asset.mediumStorageKey]),
-    ].filter((objectKey): objectKey is string => Boolean(objectKey));
+    const area = getStorageAreaForGalleryVisibility(gallery.visibility);
+    const deletionTargets: StorageDeletionTarget[] = [
+      ...gallery.assets.flatMap((asset) => [
+        asset.smallStorageKey,
+        asset.mediumStorageKey,
+        asset.largeStorageKey,
+      ]),
+    ]
+      .filter((objectKey): objectKey is string => Boolean(objectKey))
+      .map((objectKey) => ({ area, objectKey }));
+    if (gallery.archiveObjectKey) {
+      deletionTargets.push({ area: gallery.archiveStorageArea, objectKey: gallery.archiveObjectKey });
+    }
+    deletionTargets.push(
+      ...gallery.assets.map((asset) => ({ area: asset.sourceStorageArea, objectKey: asset.storageKey })),
+    );
+    deletionTargets.push(
+      ...gallery.uploadSessions.map((session) => ({
+        area: session.storageArea,
+        objectKey: session.quarantineObjectKey,
+      })),
+    );
 
-    await Promise.allSettled(objectKeys.map((objectKey) => deleteObjectByKey(objectKey)));
-    await prisma.gallery.delete({ where: { id: parsed.id } });
+    await prisma.$transaction(async (transaction) => {
+      await enqueueStorageDeletions(transaction, deletionTargets);
+      await transaction.gallery.delete({ where: { id: parsed.id } });
+    });
+    await attemptStorageDeletions(deletionTargets);
+    invalidatePublicGalleryCache();
     return redirectToAdmin(request, "notice=gallery_deleted");
   } catch (error) {
     if (error instanceof z.ZodError) {

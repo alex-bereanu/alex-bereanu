@@ -1,13 +1,14 @@
-import Link from "next/link";
 import Image from "next/image";
 
 import { ContactForm } from "@/components/contact-form";
 import { HomepageHeroMosaic } from "@/components/homepage-hero-mosaic";
+import { PhotoResourceHints } from "@/components/photo-resource-hints";
 import { SiteFooter } from "@/components/site-footer";
+import { SiteHeader } from "@/components/site-header";
 import { env } from "@/config/env";
 import { headerCategoryLinks } from "@/lib/site-data";
 import { getPublicHomepageMosaicPhotos } from "@/server/services/public-gallery";
-import { getSiteContent } from "@/server/services/site-content";
+import { getSiteContents } from "@/server/services/site-content";
 import { createCsrfToken } from "@/server/security/request-protection";
 
 export const dynamic = "force-dynamic";
@@ -15,33 +16,20 @@ export const dynamic = "force-dynamic";
 const IMAGE_QUALITY = 75;
 
 export default async function Home() {
-  const [heroPhotos, aboutContent, contactContent] = await Promise.all([
+  const [heroPhotos, contents] = await Promise.all([
     getPublicHomepageMosaicPhotos(),
-    getSiteContent("home.about"),
-    getSiteContent("home.contact"),
+    getSiteContents(["home.about", "home.contact"]),
   ]);
+  const [aboutContent, contactContent] = contents;
   const csrfToken = createCsrfToken();
 
   return (
     <div className="w-full">
-      <header className="site-header mx-auto my-4 w-[calc(100%-2rem)] max-w-6xl rounded p-4 backdrop-blur">
-        <div className="flex flex-col items-center gap-4">
-          <div className="header-brand">Alex Bereanu</div>
-          <nav className="header-nav text-sm">
-            {headerCategoryLinks.map((category) => (
-              <Link key={category.href} href={category.href} className="header-link">
-                {category.label}
-              </Link>
-            ))}
-            <a href="#about" className="header-link">
-              About
-            </a>
-            <a href="#contact" className="header-link">
-              Connect
-            </a>
-          </nav>
-        </div>
-      </header>
+      <PhotoResourceHints publicImageOrigin={env.R2_PUBLIC_BASE_URL ? new URL(env.R2_PUBLIC_BASE_URL).origin : undefined} />
+      <SiteHeader
+        className="mx-auto my-4 w-[calc(100%-2rem)] max-w-6xl rounded p-4 backdrop-blur"
+        links={[...headerCategoryLinks, { href: "#about", label: "About" }, { href: "#contact", label: "Connect" }]}
+      />
 
       <HomepageHeroMosaic photos={heroPhotos} />
 

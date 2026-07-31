@@ -1,9 +1,18 @@
 export const BYTES_PER_MEGABYTE = 1024 * 1024;
 
-export const MAX_GALLERY_ASSET_UPLOAD_COUNT = 2000;
+export const MAX_GALLERY_ASSET_UPLOAD_COUNT = 100;
 export const MAX_GALLERY_ASSET_SIZE_BYTES = 100 * BYTES_PER_MEGABYTE;
 export const MAX_SITE_CONTENT_IMAGE_SIZE_BYTES = 12 * BYTES_PER_MEGABYTE;
 export const MAX_ARCHIVE_SIZE_BYTES = 1024 * BYTES_PER_MEGABYTE;
+export const MAX_IMAGE_PIXEL_COUNT = 80_000_000;
+export const MAX_IMAGE_DIMENSION = 20_000;
+export const UPLOAD_SESSION_MAX_AGE_MS = 30 * 60 * 1000;
+export const RESUMABLE_UPLOAD_SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+export const MULTIPART_UPLOAD_SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+export const MULTIPART_PART_SIZE_BYTES = 16 * BYTES_PER_MEGABYTE;
+export const MAX_PARALLEL_PHOTO_UPLOADS = 3;
+export const MAX_PARALLEL_MULTIPART_PARTS = 3;
+export const MAX_UPLOAD_RETRIES = 3;
 
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) {

@@ -1,59 +1,78 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Image from "next/image";
-import { useMemo, useState } from "react";
-import Lightbox from "yet-another-react-lightbox";
-import Thumbnails from "yet-another-react-lightbox/plugins/thumbnails";
-import Zoom from "yet-another-react-lightbox/plugins/zoom";
-import "yet-another-react-lightbox/styles.css";
-import "yet-another-react-lightbox/plugins/thumbnails.css";
+import { useRef, useState } from "react";
 
-import { useMobileImageVariant } from "./use-mobile-image-variant";
+import type { LightboxPhoto } from "./gallery-lightbox-overlay";
 
-type PublicGalleryMosaicPhoto = {
-  id: string;
-  src: string;
-  smallSrc?: string;
-  mediumSrc?: string;
-  width: number;
-  height: number;
-  smallWidth?: number;
-  smallHeight?: number;
-  mediumWidth?: number;
-  mediumHeight?: number;
-  alt: string;
-};
+const GalleryLightboxOverlay = dynamic(
+  () => import("./gallery-lightbox-overlay").then((module) => module.GalleryLightboxOverlay),
+  { ssr: false },
+);
 
 type PublicGalleryMosaicProps = {
-  photos: PublicGalleryMosaicPhoto[];
+  photos: LightboxPhoto[];
+  initialNextCursor?: string | null;
+  loadMoreUrl?: string;
+  totalCount?: number;
   desktopMode?: "continuous" | "hero";
 };
 
-const DESKTOP_COLUMN_COUNT = 5;
-const MAX_GRID_ROWS = 8;
-const MAX_GRID_PHOTO_COUNT = DESKTOP_COLUMN_COUNT * MAX_GRID_ROWS;
-const INITIAL_VISIBLE_COUNT = DESKTOP_COLUMN_COUNT * 2;
-const CONTINUOUS_EAGER_IMAGE_COUNT = DESKTOP_COLUMN_COUNT * 3;
+type PagePayload = {
+  photos?: LightboxPhoto[];
+  nextCursor?: string | null;
+};
+
 const IMAGE_QUALITY = 75;
 
-export function PublicGalleryMosaic({ photos, desktopMode = "continuous" }: PublicGalleryMosaicProps) {
-  const [index, setIndex] = useState<number>(-1);
-  const isMobileLightbox = useMobileImageVariant();
-  const gridPhotos = useMemo(() => photos.slice(0, MAX_GRID_PHOTO_COUNT), [photos]);
-  const highPriorityPhotoCount = desktopMode === "hero" ? INITIAL_VISIBLE_COUNT : DESKTOP_COLUMN_COUNT;
-  const eagerPhotoCount = desktopMode === "hero" ? DESKTOP_COLUMN_COUNT * 4 : CONTINUOUS_EAGER_IMAGE_COUNT;
+function preloadLightbox(): void {
+  void import("./gallery-lightbox-overlay");
+}
 
-  const slides = useMemo(
-    () =>
-      gridPhotos.map((photo) => ({
-        src: isMobileLightbox ? photo.smallSrc ?? photo.src : photo.mediumSrc ?? photo.smallSrc ?? photo.src,
-        width: isMobileLightbox ? photo.smallWidth ?? photo.width : photo.mediumWidth ?? photo.width,
-        height: isMobileLightbox ? photo.smallHeight ?? photo.height : photo.mediumHeight ?? photo.height,
-        alt: photo.alt,
-        thumbnail: photo.smallSrc ?? photo.src,
-      })),
-    [gridPhotos, isMobileLightbox],
-  );
+export function PublicGalleryMosaic({
+  photos: initialPhotos,
+  initialNextCursor = null,
+  loadMoreUrl,
+  totalCount,
+}: PublicGalleryMosaicProps) {
+  const [photos, setPhotos] = useState(initialPhotos);
+  const [nextCursor, setNextCursor] = useState(initialNextCursor);
+  const [index, setIndex] = useState(-1);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const returnFocusRef = useRef<HTMLButtonElement | null>(null);
+
+  function closeLightbox(): void {
+    setIndex(-1);
+    window.requestAnimationFrame(() => returnFocusRef.current?.focus());
+  }
+
+  async function loadMore(): Promise<void> {
+    if (!loadMoreUrl || !nextCursor || isLoadingMore) return;
+
+    setIsLoadingMore(true);
+    setLoadError(null);
+
+    try {
+      const separator = loadMoreUrl.includes("?") ? "&" : "?";
+      const response = await fetch(`${loadMoreUrl}${separator}cursor=${encodeURIComponent(nextCursor)}`, {
+        cache: "no-store",
+      });
+      const payload = (await response.json()) as PagePayload;
+      if (!response.ok || !Array.isArray(payload.photos)) throw new Error("invalid_gallery_page");
+
+      setPhotos((current) => {
+        const knownIds = new Set(current.map((photo) => photo.id));
+        return [...current, ...payload.photos!.filter((photo) => !knownIds.has(photo.id))];
+      });
+      setNextCursor(payload.nextCursor ?? null);
+    } catch {
+      setLoadError("Unable to load more photos. Please try again.");
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }
 
   if (photos.length === 0) {
     return (
@@ -66,12 +85,18 @@ export function PublicGalleryMosaic({ photos, desktopMode = "continuous" }: Publ
   return (
     <>
       <div className="grid w-full grid-cols-2 overflow-hidden sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-        {gridPhotos.map((photo, photoIndex) => (
+        {photos.map((photo, photoIndex) => (
           <button
             key={photo.id}
             type="button"
             className="relative block aspect-[4/5] w-full overflow-hidden bg-neutral-100"
-            onClick={() => setIndex(photoIndex)}
+            style={{ contentVisibility: "auto", containIntrinsicSize: "320px 400px" }}
+            onPointerEnter={preloadLightbox}
+            onFocus={preloadLightbox}
+            onClick={(event) => {
+              returnFocusRef.current = event.currentTarget;
+              setIndex(photoIndex);
+            }}
             aria-label={`Open ${photo.alt}`}
           >
             <Image
@@ -81,23 +106,35 @@ export function PublicGalleryMosaic({ photos, desktopMode = "continuous" }: Publ
               sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
               className="object-cover"
               quality={IMAGE_QUALITY}
-              loading={photoIndex < eagerPhotoCount ? "eager" : "lazy"}
-              fetchPriority={photoIndex < highPriorityPhotoCount ? "high" : "auto"}
+              placeholder={photo.placeholderDataUrl ? "blur" : undefined}
+              blurDataURL={photo.placeholderDataUrl}
+              loading={photoIndex === 0 ? "eager" : "lazy"}
+              fetchPriority={photoIndex === 0 ? "high" : "auto"}
             />
           </button>
         ))}
       </div>
 
-      <Lightbox
-        className="editorial-lightbox"
-        index={index}
-        open={index >= 0}
-        close={() => setIndex(-1)}
-        slides={slides}
-        plugins={[Zoom, Thumbnails]}
-        carousel={{ imageFit: "contain" }}
-        controller={{ closeOnBackdropClick: true }}
-      />
+      {nextCursor && loadMoreUrl ? (
+        <div className="flex flex-col items-center gap-2 pt-6">
+          <button
+            className="editorial-button rounded px-4 py-2 disabled:cursor-not-allowed disabled:opacity-60"
+            type="button"
+            onClick={loadMore}
+            disabled={isLoadingMore}
+          >
+            {isLoadingMore ? "Loading..." : "Load more photos"}
+          </button>
+          <p className="text-xs text-neutral-500" aria-live="polite">
+            Showing {photos.length}{totalCount ? ` of ${totalCount}` : ""} photos
+          </p>
+          {loadError ? <p className="text-sm text-red-700">{loadError}</p> : null}
+        </div>
+      ) : null}
+
+      {index >= 0 ? (
+        <GalleryLightboxOverlay photos={photos} index={index} onClose={closeLightbox} />
+      ) : null}
     </>
   );
 }

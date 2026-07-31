@@ -1,4 +1,4 @@
-import { GalleryCategory, GalleryVisibility } from "@prisma/client";
+import { GalleryCategory, GalleryVisibility } from "@/generated/prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -7,6 +7,7 @@ import { prisma } from "@/lib/db";
 import { toSlug } from "@/lib/slug";
 import { requireAdminRequestSession } from "@/server/auth/admin-guard";
 import { verifyMutationProtection } from "@/server/security/request-protection";
+import { invalidatePublicGalleryCache } from "@/server/services/public-cache";
 
 const updateGallerySchema = z.object({
   id: z.string().trim().min(1),
@@ -51,18 +52,61 @@ export async function POST(request: Request): Promise<NextResponse> {
       isActive: String(formData.get("isActive") ?? "") === "on",
     });
 
-    await prisma.gallery.update({
+    const currentGallery = await prisma.gallery.findUnique({
       where: { id: parsed.id },
-      data: {
-        title: parsed.title,
-        slug: parsed.slug,
-        description: parsed.description,
-        category: parsed.category,
-        visibility: parsed.visibility,
-        isActive: parsed.isActive,
+      select: {
+        visibility: true,
+        archiveObjectKey: true,
+        _count: { select: { assets: true } },
+        uploadSessions: {
+          where: {
+            status: { notIn: ["COMPLETED", "EXPIRED"] },
+          },
+          select: { id: true },
+          take: 1,
+        },
       },
     });
 
+    if (!currentGallery) {
+      return redirectToAdmin(request, "error=gallery_not_found");
+    }
+
+    const visibilityChanges = currentGallery.visibility !== parsed.visibility;
+
+    if (
+      visibilityChanges &&
+      (currentGallery._count.assets > 0 || currentGallery.archiveObjectKey || currentGallery.uploadSessions.length > 0)
+    ) {
+      return redirectToAdmin(request, "error=gallery_visibility_storage_migration_required");
+    }
+
+    await prisma.$transaction(async (transaction) => {
+      await transaction.gallery.update({
+        where: { id: parsed.id },
+        data: {
+          title: parsed.title,
+          slug: parsed.slug,
+          description: parsed.description,
+          category: parsed.category,
+          visibility: parsed.visibility,
+          isActive: parsed.isActive,
+        },
+      });
+
+      if (parsed.visibility !== "PRIVATE") {
+        await transaction.galleryShareLink.updateMany({
+          where: { galleryId: parsed.id, isActive: true },
+          data: {
+            isActive: false,
+            revokedAt: new Date(),
+            grantVersion: { increment: 1 },
+          },
+        });
+      }
+    });
+
+    invalidatePublicGalleryCache();
     return redirectToAdmin(request, "notice=gallery_updated");
   } catch (error) {
     if (error instanceof z.ZodError) {

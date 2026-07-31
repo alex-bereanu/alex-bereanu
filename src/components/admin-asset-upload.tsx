@@ -1,9 +1,25 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { formatBytes, MAX_GALLERY_ASSET_SIZE_BYTES, MAX_GALLERY_ASSET_UPLOAD_COUNT } from "@/lib/upload-limits";
+import { sha256File } from "@/lib/file-hash";
+import {
+  findUploadCheckpoint,
+  removeUploadCheckpoint,
+  runBounded,
+  saveUploadCheckpoint,
+  uploadBlobWithProgress,
+  withUploadRetries,
+  type UploadCheckpoint,
+} from "@/lib/resumable-upload";
+import {
+  BYTES_PER_MEGABYTE,
+  formatBytes,
+  MAX_GALLERY_ASSET_SIZE_BYTES,
+  MAX_GALLERY_ASSET_UPLOAD_COUNT,
+  MAX_PARALLEL_PHOTO_UPLOADS,
+} from "@/lib/upload-limits";
 
 type AdminAssetUploadProps = {
   galleryId: string;
@@ -12,33 +28,30 @@ type AdminAssetUploadProps = {
 
 type UploadState =
   | { status: "idle" }
-  | { status: "uploading"; message: string }
+  | { status: "uploading"; message: string; percent: number }
   | { status: "success"; message: string }
   | { status: "error"; message: string };
 
-type UploadMetadata = {
-  objectKey: string;
-  originalFilename: string;
-  mimeType: string;
-  fileExtension?: string;
-  sizeBytes: number;
-  width?: number;
-  height?: number;
-  capturedAt?: string;
-};
-
 type SignedUploadPayload = {
   uploadUrl: string;
-  objectKey: string;
-  filename: string;
+  uploadSessionId: string;
   contentType: string;
+  cacheControl: string;
+  requiredHeaders: Record<string, string>;
+  alreadyUploaded?: boolean;
 };
 
-type ErrorPayload = {
-  error?: string;
-};
+type ErrorPayload = { error?: string };
+const SERVER_RELAY_LIMIT_BYTES = 20 * BYTES_PER_MEGABYTE;
+const HEIC_PATTERN = /\.(heic|heif)$/i;
 
-async function getResponseErrorMessage(response: Response, fallback: string): Promise<string> {
+function imageContentType(file: File): string {
+  if (file.type) return file.type.toLowerCase();
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  return extension === "jpg" || extension === "jpeg" ? "image/jpeg" : extension ? `image/${extension}` : "application/octet-stream";
+}
+
+async function responseError(response: Response, fallback: string): Promise<string> {
   try {
     const payload = (await response.json()) as ErrorPayload;
     return payload.error || fallback;
@@ -47,256 +60,238 @@ async function getResponseErrorMessage(response: Response, fallback: string): Pr
   }
 }
 
-function getFileExtension(filename: string): string | undefined {
-  const index = filename.lastIndexOf(".");
-
-  if (index < 0 || index === filename.length - 1) {
-    return undefined;
-  }
-
-  return filename.slice(index + 1).toLowerCase();
-}
-
-function getCapturedAtFromFile(file: File): string | undefined {
-  if (!Number.isFinite(file.lastModified) || file.lastModified <= 0) {
-    return undefined;
-  }
-
-  return new Date(file.lastModified).toISOString();
-}
-
-async function getImageDimensions(file: File): Promise<{ width: number; height: number } | undefined> {
-  if (!file.type.startsWith("image/")) {
-    return undefined;
-  }
-
-  return new Promise((resolve, reject) => {
-    const objectUrl = URL.createObjectURL(file);
-    const image = new Image();
-
-    image.onload = () => {
-      const dimensions = {
-        width: image.naturalWidth,
-        height: image.naturalHeight,
-      };
-
-      URL.revokeObjectURL(objectUrl);
-      resolve(dimensions);
-    };
-
-    image.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error("Unable to read image dimensions."));
-    };
-
-    image.src = objectUrl;
-  });
-}
-
-async function uploadAssetViaSignedUrl(payload: SignedUploadPayload, file: File): Promise<boolean> {
-  try {
-    const putResponse = await fetch(payload.uploadUrl, {
-      method: "PUT",
-      headers: {
-        "Content-Type": payload.contentType,
-      },
-      body: file,
-    });
-
-    return putResponse.ok;
-  } catch {
-    return false;
-  }
-}
-
-async function uploadAssetViaServer(input: {
-  galleryId: string;
-  objectKey: string;
-  contentType: string;
-  file: File;
-  csrfToken: string;
-}): Promise<void> {
-  const relayPayload = new FormData();
-  relayPayload.set("csrfToken", input.csrfToken);
-  relayPayload.set("galleryId", input.galleryId);
-  relayPayload.set("objectKey", input.objectKey);
-  relayPayload.set("contentType", input.contentType);
-  relayPayload.set("file", input.file, input.file.name);
-
-  const relayResponse = await fetch("/admin/actions/galleries/assets-upload", {
+async function postJson<T>(url: string, body: Record<string, unknown>, csrfToken: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(url, {
     method: "POST",
-    body: relayPayload,
+    headers: { "Content-Type": "application/json", "x-csrf-token": csrfToken },
+    body: JSON.stringify({ ...body, csrfToken }),
+    signal,
   });
+  if (!response.ok) throw new Error(await responseError(response, "Upload request failed."));
+  return response.json() as Promise<T>;
+}
 
-  if (!relayResponse.ok) {
-    throw new Error(await getResponseErrorMessage(relayResponse, "Image upload failed."));
-  }
+async function relaySmallAsset(input: {
+  file: File;
+  galleryId: string;
+  uploadSessionId: string;
+  csrfToken: string;
+  signal: AbortSignal;
+}): Promise<void> {
+  const body = new FormData();
+  body.set("csrfToken", input.csrfToken);
+  body.set("galleryId", input.galleryId);
+  body.set("uploadSessionId", input.uploadSessionId);
+  body.set("file", input.file, input.file.name);
+  const response = await fetch("/admin/actions/galleries/assets-upload", { method: "POST", body, signal: input.signal });
+  if (!response.ok) throw new Error(await responseError(response, "Image upload failed."));
 }
 
 export function AdminAssetUpload({ galleryId, csrfToken }: AdminAssetUploadProps) {
   const router = useRouter();
   const [state, setState] = useState<UploadState>({ status: "idle" });
   const [selectedCount, setSelectedCount] = useState(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const statusRef = useRef<HTMLParagraphElement | null>(null);
 
   const canSubmit = useMemo(() => selectedCount > 0 && state.status !== "uploading", [selectedCount, state.status]);
-  const shouldUseDirectUpload =
-    typeof window !== "undefined" && !["localhost", "127.0.0.1"].includes(window.location.hostname);
+
+  useEffect(() => {
+    if (state.status !== "uploading") return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [state.status]);
+
+  useEffect(() => {
+    if (state.status === "error") statusRef.current?.focus();
+  }, [state.status]);
+
+  async function createOrResumeSession(
+    file: File,
+    sha256: string,
+    checkpoint: UploadCheckpoint | null,
+    signal: AbortSignal,
+  ): Promise<SignedUploadPayload> {
+    if (checkpoint && checkpoint.status !== "queued") {
+      try {
+        return await postJson<SignedUploadPayload>(
+          "/admin/actions/galleries/uploads/resume-url",
+          { galleryId, uploadSessionId: checkpoint.uploadSessionId, sha256, sizeBytes: file.size },
+          csrfToken,
+          signal,
+        );
+      } catch {
+        removeUploadCheckpoint(checkpoint);
+      }
+    }
+
+    return postJson<SignedUploadPayload>(
+      "/admin/actions/galleries/assets-upload-url",
+      {
+        galleryId,
+        filename: file.name,
+        contentType: imageContentType(file),
+        sizeBytes: file.size,
+        sha256,
+      },
+      csrfToken,
+      signal,
+    );
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
     const form = event.currentTarget;
-    const formData = new FormData(form);
-    const files = formData.getAll("assets").filter((value): value is File => value instanceof File && value.size > 0);
+    const files = Array.from(new FormData(form).getAll("assets")).filter(
+      (value): value is File => value instanceof File && value.size > 0,
+    );
 
     if (files.length === 0) {
       setState({ status: "error", message: "Choose at least one image file." });
       return;
     }
-
     if (files.length > MAX_GALLERY_ASSET_UPLOAD_COUNT) {
-      setState({
-        status: "error",
-        message: `Choose ${MAX_GALLERY_ASSET_UPLOAD_COUNT.toLocaleString()} images or fewer per upload.`,
-      });
+      setState({ status: "error", message: `Choose ${MAX_GALLERY_ASSET_UPLOAD_COUNT} images or fewer per upload.` });
       return;
     }
-
+    const heicFile = files.find((file) => HEIC_PATTERN.test(file.name) || /hei[cf]/i.test(file.type));
+    if (heicFile) {
+      setState({ status: "error", message: `${heicFile.name} is HEIC/HEIF. Export it as JPG before uploading.` });
+      return;
+    }
     const oversizedFile = files.find((file) => file.size > MAX_GALLERY_ASSET_SIZE_BYTES);
-
     if (oversizedFile) {
-      setState({
-        status: "error",
-        message: `${oversizedFile.name} is ${formatBytes(oversizedFile.size)}. Gallery images must be ${formatBytes(
-          MAX_GALLERY_ASSET_SIZE_BYTES,
-        )} or smaller.`,
-      });
+      setState({ status: "error", message: `${oversizedFile.name} exceeds ${formatBytes(MAX_GALLERY_ASSET_SIZE_BYTES)}.` });
       return;
     }
 
-    setState({ status: "uploading", message: `Uploading ${files.length} file(s)...` });
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    const progressByIndex = new Map<number, number>();
+    let completedCount = 0;
+
+    const updateProgress = (index: number, percent: number, message: string) => {
+      progressByIndex.set(index, percent);
+      const overall = Math.round([...progressByIndex.values()].reduce((sum, value) => sum + value, 0) / files.length);
+      setState({ status: "uploading", message, percent: overall });
+    };
+
+    setState({ status: "uploading", message: `Preparing ${files.length} images…`, percent: 0 });
 
     try {
-      const uploaded: UploadMetadata[] = [];
+      await runBounded(files, MAX_PARALLEL_PHOTO_UPLOADS, async (file, index) => {
+        const sha256 = await sha256File(file, (percent) => updateProgress(index, Math.round(percent * 0.15), `Checking ${file.name}…`));
+        let checkpoint = findUploadCheckpoint({ galleryId, kind: "asset", sha256, sizeBytes: file.size });
 
-      for (let index = 0; index < files.length; index += 1) {
-        const file = files[index]!;
-
-        setState({
-          status: "uploading",
-          message: `Uploading ${index + 1}/${files.length}: ${file.name}`,
-        });
-
-        const [dimensions, uploadUrlResponse] = await Promise.all([
-          getImageDimensions(file).catch(() => undefined),
-          fetch("/admin/actions/galleries/assets-upload-url", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-csrf-token": csrfToken,
-            },
-            body: JSON.stringify({
-              galleryId,
-              filename: file.name,
-              contentType: file.type || "application/octet-stream",
-              sizeBytes: file.size,
-              csrfToken,
-            }),
-          }),
-        ]);
-
-        if (!uploadUrlResponse.ok) {
-          throw new Error(await getResponseErrorMessage(uploadUrlResponse, `Unable to prepare upload for ${file.name}.`));
+        if (checkpoint?.status === "queued") {
+          completedCount += 1;
+          updateProgress(index, 100, `${completedCount}/${files.length} images already completed.`);
+          return;
         }
 
-        const uploadPayload = (await uploadUrlResponse.json()) as SignedUploadPayload;
-
-        const directUploadSucceeded = shouldUseDirectUpload
-          ? await uploadAssetViaSignedUrl(uploadPayload, file)
-          : false;
-
-        if (!directUploadSucceeded) {
-          setState({
-            status: "uploading",
-            message: `Direct upload blocked, retrying via server: ${index + 1}/${files.length} (${file.name})`,
-          });
-
-          await uploadAssetViaServer({
-            galleryId,
-            objectKey: uploadPayload.objectKey,
-            contentType: uploadPayload.contentType,
-            file,
-            csrfToken,
-          });
-        }
-
-        uploaded.push({
-          objectKey: uploadPayload.objectKey,
-          originalFilename: file.name,
-          mimeType: file.type || uploadPayload.contentType,
-          fileExtension: getFileExtension(file.name),
-          sizeBytes: file.size,
-          width: dimensions?.width,
-          height: dimensions?.height,
-          capturedAt: getCapturedAtFromFile(file),
-        });
-      }
-
-      const finalizeResponse = await fetch("/admin/actions/galleries/assets-finalize", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-csrf-token": csrfToken,
-        },
-        body: JSON.stringify({
+        const upload = await createOrResumeSession(file, sha256, checkpoint, abortController.signal);
+        checkpoint = saveUploadCheckpoint({
           galleryId,
-          uploads: uploaded,
-          csrfToken,
-        }),
+          kind: "asset",
+          sha256,
+          sizeBytes: file.size,
+          uploadSessionId: upload.uploadSessionId,
+          status: checkpoint?.status === "uploaded" || upload.alreadyUploaded ? "uploaded" : "prepared",
+        });
+
+        if (checkpoint.status !== "uploaded") {
+          try {
+            await withUploadRetries(
+              () => uploadBlobWithProgress({
+                url: upload.uploadUrl,
+                body: file,
+                headers: {
+                  "Content-Type": upload.contentType,
+                  "Cache-Control": upload.cacheControl,
+                  ...upload.requiredHeaders,
+                },
+                signal: abortController.signal,
+                onProgress: (loaded, total) =>
+                  updateProgress(index, 15 + Math.round((loaded / total) * 75), `Uploading ${file.name}…`),
+              }),
+              abortController.signal,
+            );
+          } catch (error) {
+            if (file.size > SERVER_RELAY_LIMIT_BYTES || abortController.signal.aborted) throw error;
+            updateProgress(index, 60, `Retrying ${file.name} through the secure server relay…`);
+            await relaySmallAsset({ file, galleryId, uploadSessionId: upload.uploadSessionId, csrfToken, signal: abortController.signal });
+          }
+          checkpoint = saveUploadCheckpoint({ ...checkpoint, status: "uploaded" });
+        }
+
+        await withUploadRetries(
+          () => postJson(
+            "/admin/actions/galleries/assets-finalize",
+            { galleryId, uploadSessionIds: [upload.uploadSessionId] },
+            csrfToken,
+            abortController.signal,
+          ),
+          abortController.signal,
+        );
+        saveUploadCheckpoint({ ...checkpoint, status: "queued" });
+        completedCount += 1;
+        updateProgress(index, 100, `${completedCount}/${files.length} images queued for verification.`);
       });
 
-      if (!finalizeResponse.ok) {
-        throw new Error(await getResponseErrorMessage(finalizeResponse, "Unable to finalize uploaded assets."));
-      }
-
-      setState({ status: "success", message: `Uploaded ${uploaded.length} file(s) successfully.` });
+      setState({ status: "success", message: `${files.length} images are uploaded or already complete. Verification is queued.` });
       setSelectedCount(0);
       form.reset();
       router.refresh();
     } catch (error) {
-      setState({ status: "error", message: error instanceof Error ? error.message : "Image upload failed. Please try again." });
+      const paused = abortController.signal.aborted || (error instanceof DOMException && error.name === "AbortError");
+      setState({
+        status: "error",
+        message: paused
+          ? "Upload paused. Keep the same files selected and choose Resume Uploads when ready."
+          : error instanceof Error ? `${error.message} Select the same files to resume completed work.` : "Upload failed. Select the same files to resume.",
+      });
+    } finally {
+      abortControllerRef.current = null;
     }
   }
 
   return (
-    <form className="mt-3 grid gap-2" onSubmit={handleSubmit}>
-      <label className="text-xs text-neutral-700">
-        Upload assets
+    <form className="mt-3 grid gap-3" onSubmit={handleSubmit}>
+      <label className="form-field">
+        <span>Upload Images</span>
         <input
-          className="mt-1 block w-full rounded border px-3 py-2 text-xs"
+          className="block w-full rounded border px-3 py-2 text-base"
           name="assets"
           type="file"
-          accept="image/*"
+          accept=".jpg,.jpeg,.png,.webp,.gif,.avif,image/jpeg,image/png,image/webp,image/gif,image/avif"
           multiple
           onChange={(event) => setSelectedCount(event.currentTarget.files?.length ?? 0)}
         />
+        <span className="form-helper">
+          JPG, PNG, WebP, GIF, or AVIF. HEIC is rejected early; export it as JPG. Up to {MAX_GALLERY_ASSET_UPLOAD_COUNT} images, {formatBytes(MAX_GALLERY_ASSET_SIZE_BYTES)} each.
+        </span>
       </label>
-      <p className="text-[11px] text-neutral-500">
-        Max {MAX_GALLERY_ASSET_UPLOAD_COUNT.toLocaleString()} images per upload, {formatBytes(MAX_GALLERY_ASSET_SIZE_BYTES)} per image.
-      </p>
 
-      <button
-        className="rounded border bg-white px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-60"
-        type="submit"
-        disabled={!canSubmit}
-      >
-        {state.status === "uploading" ? "Uploading..." : "Upload selected images"}
-      </button>
+      <div className="flex flex-wrap gap-2">
+        <button className="min-h-11 rounded border bg-white px-3 py-2 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-60" type="submit" disabled={!canSubmit}>
+          {state.status === "uploading" ? "Uploading…" : "Upload or Resume Selected Images"}
+        </button>
+        {state.status === "uploading" ? (
+          <button className="min-h-11 rounded border border-amber-400 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900" type="button" onClick={() => abortControllerRef.current?.abort()}>
+            Pause Uploads
+          </button>
+        ) : null}
+      </div>
 
-      {state.status === "uploading" ? <p className="text-xs text-neutral-700">{state.message}</p> : null}
-      {state.status === "success" ? <p className="text-xs text-emerald-700">{state.message}</p> : null}
-      {state.status === "error" ? <p className="text-xs text-red-700">{state.message}</p> : null}
+      {state.status === "uploading" ? (
+        <div className="grid gap-1" aria-live="polite">
+          <progress className="h-2 w-full" max={100} value={state.percent}>{state.percent}%</progress>
+          <p className="text-xs text-neutral-700">{state.message}</p>
+        </div>
+      ) : null}
+      {state.status === "success" ? <p className="text-xs text-emerald-700" aria-live="polite">{state.message}</p> : null}
+      {state.status === "error" ? <p ref={statusRef} className="text-xs text-red-700" role="alert" tabIndex={-1}>{state.message}</p> : null}
     </form>
   );
 }
-

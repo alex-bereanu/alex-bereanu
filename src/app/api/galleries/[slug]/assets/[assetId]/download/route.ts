@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/db";
 import { createSignedDownloadUrl } from "@/server/services/storage";
-import { recordGalleryShareLinkDownload, resolveGalleryAccessBySlug } from "@/server/services/gallery-access";
+import {
+  galleryCapabilityMatchesAccess,
+  recordGalleryShareLinkDownload,
+  resolveGalleryAccessFromCookie,
+} from "@/server/services/gallery-access";
 
 type RouteProps = {
   params: Promise<{ slug: string; assetId: string }>;
@@ -10,9 +14,9 @@ type RouteProps = {
 
 export async function GET(_: Request, { params }: RouteProps): Promise<NextResponse> {
   const { slug, assetId } = await params;
-  const access = await resolveGalleryAccessBySlug(slug);
+  const access = await resolveGalleryAccessFromCookie();
 
-  if (!access) {
+  if (!access || !galleryCapabilityMatchesAccess(slug, access)) {
     return NextResponse.json({ error: "Gallery not accessible." }, { status: 404 });
   }
 
@@ -20,9 +24,11 @@ export async function GET(_: Request, { params }: RouteProps): Promise<NextRespo
     where: {
       id: assetId,
       galleryId: access.galleryId,
+      status: "READY",
     },
     select: {
       storageKey: true,
+      sourceStorageArea: true,
       originalFilename: true,
     },
   });
@@ -38,9 +44,10 @@ export async function GET(_: Request, { params }: RouteProps): Promise<NextRespo
   }
 
   const signedUrl = await createSignedDownloadUrl({
+    area: asset.sourceStorageArea,
     objectKey: asset.storageKey,
     downloadFilename: asset.originalFilename,
-    expiresInSeconds: 60 * 10,
+    expiresInSeconds: 60 * 2,
   });
 
   return NextResponse.redirect(signedUrl, 302);

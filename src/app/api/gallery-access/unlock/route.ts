@@ -8,14 +8,17 @@ import {
   createGalleryAccessToken,
   getGalleryAccessCookieName,
   getGalleryAccessMaxAgeSeconds,
+  hashGalleryCapabilityToken,
+  isGalleryCapabilityToken,
 } from "@/server/auth/gallery-access";
 import { getSecureCookieOptions } from "@/server/auth/cookies";
+import { recordSecurityAuditEvent } from "@/server/security/audit";
 import { sanitizeSameOriginPath, verifyMutationProtection } from "@/server/security/request-protection";
-import { checkRateLimit, getClientIp, rateLimitRedirectResponse } from "@/server/security/rate-limit";
+import { buildRateLimitKey, checkRateLimit, getClientIp, rateLimitRedirectResponse } from "@/server/security/rate-limit";
 import { verifyTurnstileToken } from "@/server/security/turnstile";
 
 const unlockSchema = z.object({
-  slug: z.string().trim().min(1),
+  slug: z.string().trim().regex(/^[A-Za-z0-9_-]{43}$/),
   password: z.string().min(1),
   redirectTo: z.string().trim().optional(),
 });
@@ -45,7 +48,11 @@ export async function POST(request: Request): Promise<NextResponse> {
       return securityError;
     }
 
-    const turnstileError = await verifyTurnstileToken(request, String(formData.get("cf-turnstile-response") ?? ""));
+    const turnstileError = await verifyTurnstileToken(
+      request,
+      String(formData.get("cf-turnstile-response") ?? ""),
+      "gallery_unlock",
+    );
 
     if (turnstileError) {
       return turnstileError;
@@ -57,19 +64,38 @@ export async function POST(request: Request): Promise<NextResponse> {
       redirectTo: formData.get("redirectTo"),
     });
     const unlockRateLimit = await checkRateLimit({
-      key: `gallery-unlock:${clientIp}:${parsed.slug}`,
+      key: buildRateLimitKey("gallery-unlock", request, hashGalleryCapabilityToken(parsed.slug)),
       limit: 10,
       windowMs: 15 * 60 * 1000,
     });
 
     if (!unlockRateLimit.allowed) {
+      await recordSecurityAuditEvent({
+        eventType: "gallery.unlock",
+        outcome: "DENIED",
+        clientIp,
+        metadata: { reason: "rate_limited" },
+      });
       return rateLimitRedirectResponse(request, `/g/${parsed.slug}`, unlockRateLimit.retryAfterSeconds);
     }
 
-    const shareLink = await prisma.galleryShareLink.findUnique({
-      where: { slug: parsed.slug },
+    if (!isGalleryCapabilityToken(parsed.slug)) {
+      await recordSecurityAuditEvent({ eventType: "gallery.unlock", outcome: "DENIED", clientIp, metadata: { reason: "invalid_capability" } });
+      return redirectToGallery(request, parsed.slug, "not_found");
+    }
+
+    const shareLink = await prisma.galleryShareLink.findFirst({
+      where: {
+        tokenHash: hashGalleryCapabilityToken(parsed.slug),
+        isActive: true,
+        gallery: {
+          isActive: true,
+          visibility: "PRIVATE",
+        },
+      },
       select: {
-        slug: true,
+        id: true,
+        grantVersion: true,
         isActive: true,
         expiresAt: true,
         passwordHash: true,
@@ -77,24 +103,52 @@ export async function POST(request: Request): Promise<NextResponse> {
     });
 
     if (!shareLink || !shareLink.isActive) {
+      await recordSecurityAuditEvent({ eventType: "gallery.unlock", outcome: "DENIED", clientIp, metadata: { reason: "not_found" } });
       return redirectToGallery(request, parsed.slug, "not_found");
     }
 
     if (shareLink.expiresAt && shareLink.expiresAt.getTime() < Date.now()) {
+      await recordSecurityAuditEvent({
+        eventType: "gallery.unlock",
+        outcome: "DENIED",
+        clientIp,
+        resourceType: "share_link",
+        resourceId: shareLink.id,
+        metadata: { reason: "expired" },
+      });
       return redirectToGallery(request, parsed.slug, "expired");
     }
 
     if (!shareLink.passwordHash) {
+      await recordSecurityAuditEvent({
+        eventType: "gallery.unlock",
+        outcome: "DENIED",
+        clientIp,
+        resourceType: "share_link",
+        resourceId: shareLink.id,
+        metadata: { reason: "password_not_configured" },
+      });
       return redirectToGallery(request, parsed.slug, "not_protected");
     }
 
     const passwordMatches = await bcrypt.compare(parsed.password, shareLink.passwordHash);
 
     if (!passwordMatches) {
+      await recordSecurityAuditEvent({
+        eventType: "gallery.unlock",
+        outcome: "FAILURE",
+        clientIp,
+        resourceType: "share_link",
+        resourceId: shareLink.id,
+        metadata: { reason: "invalid_password" },
+      });
       return redirectToGallery(request, parsed.slug, "invalid_password");
     }
 
-    const token = await createGalleryAccessToken(parsed.slug);
+    const token = await createGalleryAccessToken({
+      shareLinkId: shareLink.id,
+      grantVersion: shareLink.grantVersion,
+    });
 
     const redirectPath = sanitizeSameOriginPath(parsed.redirectTo, `/g/${parsed.slug}`, request.url);
     const expectedGalleryPrefix = `/g/${parsed.slug}`;
@@ -107,6 +161,14 @@ export async function POST(request: Request): Promise<NextResponse> {
       name: getGalleryAccessCookieName(),
       value: token,
       ...getSecureCookieOptions(getGalleryAccessMaxAgeSeconds()),
+    });
+
+    await recordSecurityAuditEvent({
+      eventType: "gallery.unlock",
+      outcome: "SUCCESS",
+      clientIp,
+      resourceType: "share_link",
+      resourceId: shareLink.id,
     });
 
     return response;

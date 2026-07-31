@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 
 import { resetTurnstileInForm, TurnstileField } from "@/components/turnstile-field";
 
@@ -71,6 +71,11 @@ type ContactFormProps = {
 
 export function ContactForm({ csrfToken, turnstileSiteKey }: ContactFormProps) {
   const [state, setState] = useState<FormState>(initialState);
+  const statusRef = useRef<HTMLParagraphElement | null>(null);
+
+  useEffect(() => {
+    if (state.status === "error") statusRef.current?.focus();
+  }, [state.status]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -129,30 +134,60 @@ export function ContactForm({ csrfToken, turnstileSiteKey }: ContactFormProps) {
 
   return (
     <form className="grid gap-3 sm:grid-cols-2" onSubmit={handleSubmit}>
-      <input className="editorial-input rounded px-3 py-2" name="firstName" placeholder="First Name" required />
-      <input className="editorial-input rounded px-3 py-2" name="lastName" placeholder="Last Name" required />
-      <input className="editorial-input rounded px-3 py-2" name="email" placeholder="Email" type="email" required />
-      <input className="editorial-input rounded px-3 py-2" name="telephone" placeholder="Telephone" required />
-      <textarea
-        className="editorial-input rounded px-3 py-2 sm:col-span-2"
-        name="message"
-        placeholder="Message"
-        rows={5}
-        minLength={5}
-        required
-      />
-      <TurnstileField className="sm:col-span-2" siteKey={turnstileSiteKey} />
+      <label className="form-field">
+        <span>First Name</span>
+        <input className="editorial-input rounded px-3 py-2" name="firstName" autoComplete="given-name" required />
+      </label>
+      <label className="form-field">
+        <span>Last Name</span>
+        <input className="editorial-input rounded px-3 py-2" name="lastName" autoComplete="family-name" required />
+      </label>
+      <label className="form-field">
+        <span>Email</span>
+        <input
+          className="editorial-input rounded px-3 py-2"
+          name="email"
+          type="email"
+          inputMode="email"
+          autoComplete="email"
+          spellCheck={false}
+          required
+        />
+      </label>
+      <label className="form-field">
+        <span>Telephone</span>
+        <input
+          className="editorial-input rounded px-3 py-2"
+          name="telephone"
+          type="tel"
+          inputMode="tel"
+          autoComplete="tel"
+          required
+        />
+      </label>
+      <label className="form-field sm:col-span-2">
+        <span>Message</span>
+        <textarea className="editorial-input rounded px-3 py-2" name="message" rows={5} minLength={5} required />
+        <span className="form-helper">Include the subject, location, timing, and how the photographs will be used.</span>
+      </label>
+      <TurnstileField action="contact" className="sm:col-span-2" siteKey={turnstileSiteKey} />
 
       <button
-        className="editorial-button justify-self-center rounded px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-60 sm:col-span-2"
+        className="editorial-button min-h-11 justify-self-center rounded px-5 py-2.5 disabled:cursor-not-allowed disabled:opacity-60 sm:col-span-2"
         type="submit"
         disabled={state.status === "submitting"}
       >
-        {state.status === "submitting" ? "Sending..." : "Submit message"}
+        {state.status === "submitting" ? "Sending…" : "Submit Message"}
       </button>
 
-      {state.status === "success" && <p className="text-sm text-emerald-700 sm:col-span-2">{state.message}</p>}
-      {state.status === "error" && <p className="text-sm text-red-700 sm:col-span-2">{state.message}</p>}
+      {state.status === "success" ? (
+        <p className="form-status text-sm text-emerald-700 sm:col-span-2" aria-live="polite">{state.message}</p>
+      ) : null}
+      {state.status === "error" ? (
+        <p ref={statusRef} className="form-status text-sm text-red-700 sm:col-span-2" role="alert" tabIndex={-1}>
+          {state.message}
+        </p>
+      ) : null}
     </form>
   );
 }

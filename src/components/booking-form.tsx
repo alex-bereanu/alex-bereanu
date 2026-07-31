@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 
 import { resetTurnstileInForm, TurnstileField } from "@/components/turnstile-field";
 
@@ -66,6 +66,11 @@ type BookingFormProps = {
 
 export function BookingForm({ csrfToken, turnstileSiteKey }: BookingFormProps) {
   const [state, setState] = useState<FormState>(initialState);
+  const statusRef = useRef<HTMLParagraphElement | null>(null);
+
+  useEffect(() => {
+    if (state.status === "error") statusRef.current?.focus();
+  }, [state.status]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -128,39 +133,83 @@ export function BookingForm({ csrfToken, turnstileSiteKey }: BookingFormProps) {
 
   return (
     <form className="grid gap-3 sm:grid-cols-2" onSubmit={handleSubmit}>
-      <input className="editorial-input rounded px-3 py-2" name="firstName" placeholder="First Name" required />
-      <input className="editorial-input rounded px-3 py-2" name="lastName" placeholder="Last Name" required />
-      <input className="editorial-input rounded px-3 py-2" name="email" placeholder="Email" type="email" required />
-      <input className="editorial-input rounded px-3 py-2" name="whatsapp" placeholder="Whatsapp" required />
-      <input className="editorial-input rounded px-3 py-2" name="eventDate" type="date" required />
-      <input className="editorial-input rounded px-3 py-2" name="eventType" placeholder="Event type" required />
-      <input className="editorial-input rounded px-3 py-2" name="eventDuration" placeholder="Event duration" required />
-      <input
-        className="editorial-input rounded px-3 py-2"
-        name="approximateGuestCount"
-        placeholder="Approximate number of guests"
-        type="number"
-        min={1}
-        required
-      />
-      <textarea
-        className="editorial-input rounded px-3 py-2 sm:col-span-2"
-        name="additionalNotes"
-        placeholder="Additional notes"
-        rows={4}
-      />
-      <TurnstileField className="sm:col-span-2" siteKey={turnstileSiteKey} />
+      <label className="form-field">
+        <span>First Name</span>
+        <input className="editorial-input rounded px-3 py-2" name="firstName" autoComplete="given-name" required />
+      </label>
+      <label className="form-field">
+        <span>Last Name</span>
+        <input className="editorial-input rounded px-3 py-2" name="lastName" autoComplete="family-name" required />
+      </label>
+      <label className="form-field">
+        <span>Email</span>
+        <input
+          className="editorial-input rounded px-3 py-2"
+          name="email"
+          type="email"
+          inputMode="email"
+          autoComplete="email"
+          spellCheck={false}
+          required
+        />
+      </label>
+      <label className="form-field">
+        <span>WhatsApp Number</span>
+        <input
+          className="editorial-input rounded px-3 py-2"
+          name="whatsapp"
+          type="tel"
+          inputMode="tel"
+          autoComplete="tel"
+          required
+        />
+      </label>
+      <label className="form-field">
+        <span>Event Date</span>
+        <input className="editorial-input rounded px-3 py-2" name="eventDate" type="date" autoComplete="off" required />
+      </label>
+      <label className="form-field">
+        <span>Event Type</span>
+        <input className="editorial-input rounded px-3 py-2" name="eventType" autoComplete="off" required />
+      </label>
+      <label className="form-field">
+        <span>Event Duration</span>
+        <input className="editorial-input rounded px-3 py-2" name="eventDuration" autoComplete="off" required />
+      </label>
+      <label className="form-field">
+        <span>Approximate Guest Count</span>
+        <input
+          className="editorial-input rounded px-3 py-2"
+          name="approximateGuestCount"
+          type="number"
+          inputMode="numeric"
+          autoComplete="off"
+          min={1}
+          required
+        />
+      </label>
+      <label className="form-field sm:col-span-2">
+        <span>Additional Notes <span className="font-normal text-neutral-500">(Optional)</span></span>
+        <textarea className="editorial-input rounded px-3 py-2" name="additionalNotes" rows={4} />
+      </label>
+      <TurnstileField action="booking" className="sm:col-span-2" siteKey={turnstileSiteKey} />
 
       <button
-        className="editorial-button justify-self-center rounded px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-60 sm:col-span-2"
+        className="editorial-button min-h-11 justify-self-center rounded px-5 py-2.5 disabled:cursor-not-allowed disabled:opacity-60 sm:col-span-2"
         type="submit"
         disabled={state.status === "submitting"}
       >
-        {state.status === "submitting" ? "Sending..." : "Submit booking"}
+        {state.status === "submitting" ? "Sending…" : "Submit Booking"}
       </button>
 
-      {state.status === "success" && <p className="text-sm text-emerald-700 sm:col-span-2">{state.message}</p>}
-      {state.status === "error" && <p className="text-sm text-red-700 sm:col-span-2">{state.message}</p>}
+      {state.status === "success" ? (
+        <p className="form-status text-sm text-emerald-700 sm:col-span-2" aria-live="polite">{state.message}</p>
+      ) : null}
+      {state.status === "error" ? (
+        <p ref={statusRef} className="form-status text-sm text-red-700 sm:col-span-2" role="alert" tabIndex={-1}>
+          {state.message}
+        </p>
+      ) : null}
     </form>
   );
 }

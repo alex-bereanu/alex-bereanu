@@ -1,14 +1,18 @@
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { env } from "@/config/env";
 import { AdminSetupForm } from "@/components/admin-setup-form";
 import { prisma } from "@/lib/db";
-import { isAdminSessionConfigured } from "@/server/auth/admin-session";
+import { isAdminSessionConfigured, isPasswordAdminLoginEnabled } from "@/server/auth/admin-session";
 import { createCsrfToken } from "@/server/security/request-protection";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminSetupPage() {
+  if (!isPasswordAdminLoginEnabled() || !env.ADMIN_SETUP_TOKEN) {
+    notFound();
+  }
+
   if (!env.DATABASE_URL) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-lg flex-col justify-center px-4 py-10">
@@ -25,7 +29,7 @@ export default async function AdminSetupPage() {
       <main className="mx-auto flex min-h-screen w-full max-w-lg flex-col justify-center px-4 py-10">
         <div className="rounded border bg-white p-6">
           <h1 className="text-2xl font-semibold">Create admin account</h1>
-          <p className="mt-2 text-sm text-red-700">ADMIN_SESSION_SECRET is required before creating an admin account.</p>
+          <p className="mt-2 text-sm text-red-700">Database-backed admin sessions are not configured.</p>
         </div>
       </main>
     );

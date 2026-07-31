@@ -1,48 +1,39 @@
 import type { NextConfig } from "next";
 
-const r2AccountId = process.env.R2_ACCOUNT_ID;
-const r2Hostname = r2AccountId ? `${r2AccountId}.r2.cloudflarestorage.com` : "*.r2.cloudflarestorage.com";
 const publicBaseUrl = process.env.R2_PUBLIC_BASE_URL;
-const unoptimizedImages = process.env.NODE_ENV === "development" || process.env.NEXT_IMAGE_UNOPTIMIZED === "true";
-const publicBaseHostname = (() => {
+const publicRemotePattern = (() => {
   if (!publicBaseUrl) {
     return null;
   }
 
   try {
-    return new URL(publicBaseUrl).hostname;
+    const url = new URL(publicBaseUrl);
+    const basePath = url.pathname.replace(/\/$/, "");
+
+    return {
+      protocol: url.protocol === "http:" ? ("http" as const) : ("https" as const),
+      hostname: url.hostname,
+      port: url.port,
+      pathname: `${basePath}/**`,
+      search: "",
+    };
   } catch {
     return null;
   }
 })();
 
 const nextConfig: NextConfig = {
+  poweredByHeader: false,
   images: {
-    unoptimized: unoptimizedImages,
-    minimumCacheTTL: 2678400,
-    qualities: [75, 100],
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "*.r2.dev",
-      },
-      {
-        protocol: "https",
-        hostname: r2Hostname,
-      },
-      ...(publicBaseHostname
-        ? [
-            {
-              protocol: "https" as const,
-              hostname: publicBaseHostname,
-            },
-          ]
-        : []),
-      {
-        protocol: "https",
-        hostname: "assets.domain.example",
-      },
-    ],
+    // Keep Next's bundled image transformer disabled until its transitive Sharp
+    // advisory is resolved. Public pages already select pre-generated variants;
+    // private media must never pass through the public optimizer.
+    unoptimized: true,
+    minimumCacheTTL: 14_400,
+    maximumRedirects: 0,
+    maximumResponseBody: 15_000_000,
+    qualities: [75],
+    remotePatterns: publicRemotePattern ? [publicRemotePattern] : [],
   },
 };
 

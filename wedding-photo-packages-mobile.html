@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="ro">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pachete fotografie nuntă</title>
+    <style>
+      @font-face {
+        font-family: "Gloock";
+        src: url("file:///C:/Users/User/.agents/skills/canvas-design/canvas-fonts/Gloock-Regular.ttf") format("truetype");
+        font-style: normal;
+        font-weight: 400;
+      }
+
+      @font-face {
+        font-family: "Instrument Sans";
+        src: url("file:///C:/Users/User/.agents/skills/canvas-design/canvas-fonts/InstrumentSans-Regular.ttf") format("truetype");
+        font-style: normal;
+        font-weight: 400;
+      }
+
+      @font-face {
+        font-family: "Instrument Sans";
+        src: url("file:///C:/Users/User/.agents/skills/canvas-design/canvas-fonts/InstrumentSans-Bold.ttf") format("truetype");
+        font-style: normal;
+        font-weight: 700;
+      }
+
+      @page {
+        size: 112mm 242mm;
+        margin: 0;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: #d9d5cd;
+      }
+
+      body {
+        color: #122c38;
+        font-family: "Instrument Sans", sans-serif;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      .page {
+        position: relative;
+        width: 112mm;
+        height: 242mm;
+        overflow: hidden;
+        break-after: page;
+        page-break-after: always;
+        background:
+          radial-gradient(circle at 90% 4%, rgba(198, 173, 126, 0.12), transparent 34%),
+          linear-gradient(105deg, rgba(18, 44, 56, 0.025) 0.25mm, transparent 0.25mm) 0 0 / 3.5mm 3.5mm,
+          #f7f3ea;
+      }
+
+      .page:last-child {
+        break-after: auto;
+        page-break-after: auto;
+      }
+
+      .photo-rail {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 40mm;
+        background:
+          linear-gradient(180deg, rgba(19, 52, 64, 0.98), rgba(23, 58, 68, 0.92)),
+          #163744;
+      }
+
+      .photo-rail::after {
+        content: "";
+        position: absolute;
+        top: 9mm;
+        right: -1mm;
+        bottom: 9mm;
+        width: 0.35mm;
+        background: linear-gradient(180deg, transparent, #b89c67 10%, #b89c67 90%, transparent);
+      }
+
+      .photo {
+        position: absolute;
+        overflow: hidden;
+        margin: 0;
+        padding: 1.4mm;
+        background: #f9f6ef;
+        border: 0.18mm solid rgba(184, 156, 103, 0.42);
+      }
+
+      .photo img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .photo.hero {
+        z-index: 1;
+        top: 15mm;
+        left: 3.2mm;
+        width: 35.5mm;
+        height: 90mm;
+        transform: rotate(-1.8deg);
+      }
+
+      .photo.low {
+        z-index: 2;
+        top: 137mm;
+        left: 2.2mm;
+        width: 35.5mm;
+        height: 90mm;
+        transform: rotate(1.8deg);
+      }
+
+      .page:nth-child(2) .photo.hero {
+        left: 2.4mm;
+        transform: rotate(1.8deg);
+      }
+
+      .page:nth-child(2) .photo.low {
+        left: 2.8mm;
+        transform: rotate(-1.8deg);
+      }
+
+      .page:nth-child(3) .photo.hero {
+        left: 3mm;
+        transform: rotate(-1.4deg);
+      }
+
+      .page:nth-child(3) .photo.low {
+        left: 2.8mm;
+        transform: rotate(1.6deg);
+      }
+
+      .content {
+        position: absolute;
+        top: 10mm;
+        right: 7mm;
+        bottom: 10mm;
+        left: 46mm;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        min-width: 0;
+      }
+
+      .content.dense {
+        justify-content: flex-start;
+        top: 8mm;
+        bottom: 8mm;
+      }
+
+      h1 {
+        position: relative;
+        margin: 0 0 4.4mm;
+        padding: 0 0 3.2mm;
+        color: #102f3b;
+        font-family: "Gloock", serif;
+        font-size: 7.5mm;
+        font-weight: 400;
+        line-height: 0.98;
+        letter-spacing: -0.035em;
+        text-wrap: balance;
+      }
+
+      h1::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        bottom: 0;
+        width: 17mm;
+        height: 0.4mm;
+        background: #b89c67;
+      }
+
+      .package-name,
+      .package-price {
+        display: block;
+      }
+
+      .package-price {
+        margin-top: 1.5mm;
+        font-family: "Instrument Sans", sans-serif;
+        font-size: 50%;
+        font-weight: 700;
+        line-height: 1.1;
+        letter-spacing: -0.015em;
+        white-space: nowrap;
+      }
+
+      ul {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      li {
+        position: relative;
+        margin: 0 0 1.95mm;
+        padding-left: 3.7mm;
+        font-size: 3.95mm;
+        line-height: 1.22;
+        letter-spacing: -0.012em;
+        text-wrap: pretty;
+        overflow-wrap: break-word;
+      }
+
+      li:last-child {
+        margin-bottom: 0;
+      }
+
+      li::before {
+        content: "";
+        position: absolute;
+        top: 0.61em;
+        left: 0;
+        width: 1.8mm;
+        height: 0.32mm;
+        background: #b89c67;
+      }
+
+      .optional {
+        margin: 5.1mm -3mm 0 -2mm;
+        padding: 3.1mm 2mm;
+        border: 0.25mm solid rgba(184, 156, 103, 0.68);
+        color: #102f3b;
+        font-size: 2.15mm;
+        font-weight: 700;
+        line-height: 1.25;
+        letter-spacing: -0.025em;
+        text-align: center;
+        white-space: nowrap;
+      }
+
+      .note {
+        margin: 4.2mm 0 0;
+        color: #35515b;
+        font-family: "Gloock", serif;
+        font-size: 3.45mm;
+        font-style: italic;
+        line-height: 1.34;
+      }
+    </style>
+  </head>
+  <body>
+    <section class="page">
+      <div class="photo-rail" aria-hidden="true">
+        <figure class="photo hero">
+          <img src="pdf-assets/anca-gabi-37.jpg" style="object-position: 51% 48%" />
+        </figure>
+        <figure class="photo low">
+          <img src="pdf-assets/anca-gabi-23.jpg" style="object-position: 50% 44%" />
+        </figure>
+      </div>
+
+      <main class="content">
+        <h1><span class="package-name">Exclusive</span><span class="package-price">de la 1000 eur</span></h1>
+        <ul>
+          <li>1 fotograf profesionist prezent la eveniment (tradiții, pregătiri miri, ședință foto, biserică, restaurant)</li>
+          <li>8–10 ore</li>
+          <li>1 ședință foto cu mirii, în ziua nunții, stabilită în funcție de programul evenimentului</li>
+          <li>minimum 500 cadre digitale, editate profesionist (numărul final poate varia în funcție de eveniment)</li>
+          <li>galerie foto online privată (cu posibilitatea descărcării cadrelor direct în telefon)</li>
+        </ul>
+      </main>
+    </section>
+
+    <section class="page">
+      <div class="photo-rail" aria-hidden="true">
+        <figure class="photo hero">
+          <img src="pdf-assets/anca-gabi-49.jpg" style="object-position: 50% 45%" />
+        </figure>
+        <figure class="photo low">
+          <img src="pdf-assets/anca-gabi-43.jpg" style="object-position: 50% 42%" />
+        </figure>
+      </div>
+
+      <main class="content">
+        <h1><span class="package-name">Prestige</span><span class="package-price">de la 1600 eur</span></h1>
+        <ul>
+          <li>1 fotograf profesionist prezent la eveniment (tradiții, pregătiri miri, ședință foto, biserică, restaurant)</li>
+          <li>10–12 ore</li>
+          <li>1 ședință foto cu mirii, în ziua nunții, stabilită în funcție de programul evenimentului</li>
+          <li>minimum 700 cadre digitale, editate profesionist (numărul final poate varia în funcție de eveniment)</li>
+          <li>20–30 de cadre preview livrate în maxim 7 zile de la eveniment</li>
+          <li>cadre din dronă (acolo unde locația permite)</li>
+          <li>galerie foto online privată (cu posibilitatea descărcării cadrelor direct în telefon)</li>
+        </ul>
+      </main>
+    </section>
+
+    <section class="page">
+      <div class="photo-rail" aria-hidden="true">
+        <figure class="photo hero">
+          <img src="pdf-assets/anca-gabi-60.jpg" style="object-position: 50% 45%" />
+        </figure>
+        <figure class="photo low">
+          <img src="pdf-assets/anca-gabi-61.jpg" style="object-position: 50% 58%" />
+        </figure>
+      </div>
+
+      <main class="content dense">
+        <h1><span class="package-name">Ultimate</span><span class="package-price">de la 2600 eur</span></h1>
+        <ul>
+          <li>1 fotograf profesionist prezent la eveniment (tradiții, pregătiri miri, ședință foto, biserică, restaurant)</li>
+          <li>14–16 ore</li>
+          <li>1 ședință foto cu mirii, în ziua nunții, stabilită în funcție de programul evenimentului</li>
+          <li>minimum 1000 cadre digitale, editate profesionist (numărul final poate varia în funcție de eveniment)</li>
+          <li>20–30 de cadre preview livrate în maxim 7 zile de la eveniment</li>
+          <li>cadre din dronă (acolo unde locația permite)</li>
+          <li>galerie foto online privată (cu posibilitatea descărcării cadrelor direct în telefon)</li>
+          <li>1 ședință foto „save the date”</li>
+          <li>1 ședință foto după eveniment (trash the dress sau alt concept stabilit cu mirii)</li>
+        </ul>
+
+        <p class="optional">Opțional, pentru toate pachetele, al doilea fotograf (500 eur)</p>
+        <p class="note">Pachetele sunt cu titlu de prezentare și pot suferi modificări în funcție de programul evenimentului și de nevoile dumneavoastră.</p>
+      </main>
+    </section>
+  </body>
+</html>

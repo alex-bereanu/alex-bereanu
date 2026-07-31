@@ -1,6 +1,10 @@
+import { unstable_cache } from "next/cache";
+import { cache } from "react";
+
 import { env } from "@/config/env";
 import { prisma } from "@/lib/db";
 import { portfolioCategories, type PortfolioCategory } from "@/lib/site-data";
+import { SITE_CONTENT_CACHE_TAG } from "@/server/services/public-cache";
 
 export type SiteContentKey =
   | "home.about"
@@ -197,16 +201,43 @@ export function getSiteContentDefaults(key: SiteContentKey): SiteContentDefaults
   return defaultsByKey[key];
 }
 
-export async function getSiteContent(key: SiteContentKey): Promise<ResolvedSiteContent> {
-  const defaults = getSiteContentDefaults(key);
+const getCachedSiteContentRows = unstable_cache(
+  async (keys: SiteContentKey[]) =>
+    prisma.siteContent.findMany({
+      where: { key: { in: keys } },
+      select: {
+        key: true,
+        title: true,
+        subtitle: true,
+        body: true,
+        ctaTitle: true,
+        ctaBody: true,
+        imageObjectKey: true,
+        imageSmallObjectKey: true,
+        imageMediumObjectKey: true,
+        imageAlt: true,
+      },
+    }),
+  ["site-content-rows-v1"],
+  { revalidate: 3600, tags: [SITE_CONTENT_CACHE_TAG] },
+);
+
+export async function getSiteContents(keys: SiteContentKey[]): Promise<ResolvedSiteContent[]> {
+  const uniqueKeys = [...new Set(keys)];
 
   if (!env.DATABASE_URL) {
-    return mergeContent(defaults);
+    return uniqueKeys.map((key) => mergeContent(getSiteContentDefaults(key)));
   }
 
-  const row = await prisma.siteContent.findUnique({ where: { key } });
-  return mergeContent(defaults, row ?? undefined);
+  const rows = await getCachedSiteContentRows(uniqueKeys);
+  const rowsByKey = new Map(rows.map((row) => [row.key, row]));
+  return uniqueKeys.map((key) => mergeContent(getSiteContentDefaults(key), rowsByKey.get(key)));
 }
+
+export const getSiteContent = cache(async (key: SiteContentKey): Promise<ResolvedSiteContent> => {
+  const [content] = await getSiteContents([key]);
+  return content ?? mergeContent(getSiteContentDefaults(key));
+});
 
 export async function getEditableSiteContentEntries(): Promise<ResolvedSiteContent[]> {
   if (!env.DATABASE_URL) {

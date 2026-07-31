@@ -67,6 +67,12 @@ for (const envFileName of [".env", ".env.local"]) {
   }
 }
 
+const isGenerateCommand = argv[0] === "generate";
+
+if (!process.env.DATABASE_URL && isGenerateCommand) {
+  process.env.DATABASE_URL = "postgresql://generate-only:generate-only@localhost:5432/generate-only";
+}
+
 if (!process.env.DATABASE_URL) {
   console.error(
     "DATABASE_URL is still missing. Add it to .env.local or .env before running Prisma commands.",

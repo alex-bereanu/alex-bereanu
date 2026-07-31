@@ -3,7 +3,10 @@ import { Suspense } from "react";
 import { AdminLoginForm } from "@/components/admin-login-form";
 import { env } from "@/config/env";
 import { isAdminGoogleOAuthConfigured } from "@/server/auth/admin-google-oauth";
+import { isPasswordAdminLoginEnabled } from "@/server/auth/admin-session";
 import { createCsrfToken } from "@/server/security/request-protection";
+
+export const dynamic = "force-dynamic";
 
 function LoginFallback() {
   return (
@@ -23,6 +26,7 @@ export default function AdminLoginPage() {
         <AdminLoginForm
           csrfToken={csrfToken}
           googleOAuthEnabled={isAdminGoogleOAuthConfigured()}
+          passwordLoginEnabled={isPasswordAdminLoginEnabled()}
           turnstileSiteKey={env.NEXT_PUBLIC_TURNSTILE_SITE_KEY}
         />
       </Suspense>

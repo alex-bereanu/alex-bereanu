@@ -10,7 +10,9 @@ import { getPortfolioContentKey, getSiteContent } from "@/server/services/site-c
 import { BookingForm } from "./booking-form";
 import { ContactForm } from "./contact-form";
 import { PublicGalleryMosaic } from "./public-gallery-mosaic";
+import { PhotoResourceHints } from "./photo-resource-hints";
 import { SiteFooter } from "./site-footer";
+import { SiteHeader } from "./site-header";
 
 type InquiryType = "booking" | "contact";
 
@@ -87,7 +89,7 @@ export async function CategoryLandingPage({
   showcaseOnly = false,
   showGalleriesAfterMosaic = false,
 }: CategoryLandingPageProps) {
-  const [{ galleries }, content] = await Promise.all([
+  const [{ galleries, showcasePhotos }, content] = await Promise.all([
     getPublicCategoryGalleriesBySlug(categorySlug),
     getSiteContent(getPortfolioContentKey(categorySlug)),
   ]);
@@ -114,36 +116,21 @@ export async function CategoryLandingPage({
     (inquiryType === "booking"
       ? "Submissions are stored as actionable tickets in the admin panel and sent by email to your configured inbox."
       : "Send a note about the story, subject, location, or production needs you have in mind.");
-  const showcasePhotos = shuffledPhotos(galleries.flatMap((gallery) => gallery.photos));
+  const shuffledShowcasePhotos = shuffledPhotos(showcasePhotos);
 
   if (showcaseOnly) {
     return (
       <div className="flex w-full flex-col bg-white">
-        <header className="site-header mx-auto my-4 w-[calc(100%-2rem)] max-w-6xl rounded p-4 backdrop-blur">
-          <div className="flex flex-col items-center gap-4">
-            <Link className="header-brand" href="/">
-              Alex Bereanu
-            </Link>
-            <nav className="header-nav text-sm">
-              <Link href="/" className="header-link">
-                Home
-              </Link>
-              {headerCategoryLinks.map((category) => (
-                <Link key={category.href} href={category.href} className="header-link">
-                  {category.label}
-                </Link>
-              ))}
-              {showGalleriesAfterMosaic ? (
-                <a href="#galleries" className="header-link">
-                  Galleries
-                </a>
-              ) : null}
-              <a href={`#${inquirySectionId}`} className="header-link">
-                {inquiryLabel}
-              </a>
-            </nav>
-          </div>
-        </header>
+        <PhotoResourceHints publicImageOrigin={env.R2_PUBLIC_BASE_URL ? new URL(env.R2_PUBLIC_BASE_URL).origin : undefined} />
+        <SiteHeader
+          className="mx-auto my-4 w-[calc(100%-2rem)] max-w-6xl rounded p-4 backdrop-blur"
+          links={[
+            { href: "/", label: "Home" },
+            ...headerCategoryLinks,
+            ...(showGalleriesAfterMosaic ? [{ href: "#galleries", label: "Galleries" }] : []),
+            { href: `#${inquirySectionId}`, label: inquiryLabel },
+          ]}
+        />
 
         <main className="flex w-full flex-col gap-20">
           {missingPublicBase ? (
@@ -153,7 +140,7 @@ export async function CategoryLandingPage({
           ) : null}
 
           <section aria-label={`${resolvedTitle} photos`} className="w-full">
-            <PublicGalleryMosaic photos={showcasePhotos} desktopMode="hero" />
+            <PublicGalleryMosaic photos={shuffledShowcasePhotos} desktopMode="hero" />
           </section>
 
           {showGalleriesAfterMosaic ? (
@@ -221,29 +208,16 @@ export async function CategoryLandingPage({
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-20 px-4 py-8 sm:px-6 lg:px-8">
-      <header className="site-header rounded p-4 backdrop-blur">
-        <div className="flex flex-col items-center gap-4">
-          <Link className="header-brand" href="/">
-            Alex Bereanu
-          </Link>
-          <nav className="header-nav text-sm">
-            <Link href="/" className="header-link">
-              Home
-            </Link>
-            {headerCategoryLinks.map((category) => (
-              <Link key={category.href} href={category.href} className="header-link">
-                {category.label}
-              </Link>
-            ))}
-            <a href="#galleries" className="header-link">
-              Galleries
-            </a>
-            <a href={`#${inquirySectionId}`} className="header-link">
-              {inquiryLabel}
-            </a>
-          </nav>
-        </div>
-      </header>
+      <PhotoResourceHints publicImageOrigin={env.R2_PUBLIC_BASE_URL ? new URL(env.R2_PUBLIC_BASE_URL).origin : undefined} />
+      <SiteHeader
+        className="rounded p-4 backdrop-blur"
+        links={[
+          { href: "/", label: "Home" },
+          ...headerCategoryLinks,
+          { href: "#galleries", label: "Galleries" },
+          { href: `#${inquirySectionId}`, label: inquiryLabel },
+        ]}
+      />
 
       <main className="flex flex-col gap-20">
         <section id="hero" className="grid gap-6 lg:grid-cols-2">

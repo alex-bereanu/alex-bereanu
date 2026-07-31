@@ -1,0 +1,11 @@
+{
+  "exceptions": [
+    {
+      "advisory": "GHSA-f88m-g3jw-g9cj",
+      "package": "sharp",
+      "maximumSeverity": "high",
+      "expiresOn": "2026-09-30",
+      "rationale": "Next.js 16.2.12 bundles sharp 0.34.5 and npm reports no compatible fix. The application pins sharp 0.35.3, disables Next image optimization, permits no private media through the optimizer, and will remove this exception when Next updates its nested dependency."
+    }
+  ]
+}

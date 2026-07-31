@@ -87,7 +87,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         data: {
           ticketId: ticket.id,
           actorType: "ADMIN",
-          actorLabel: env.ADMIN_USERNAME ?? "admin",
+          actorLabel: "Admin",
           emailTo: ticket.email,
           emailSubject: parsed.subject,
           bodyText: template.text,

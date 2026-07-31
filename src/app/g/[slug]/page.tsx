@@ -1,15 +1,13 @@
+import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { cookies } from "next/headers";
+import { notFound, redirect } from "next/navigation";
 
-import { env } from "@/config/env";
 import { GalleryLightbox } from "@/components/gallery-lightbox";
 import { SiteFooter } from "@/components/site-footer";
 import { TurnstileField } from "@/components/turnstile-field";
-import { prisma } from "@/lib/db";
-import { getGalleryAccessCookieName, verifyGalleryAccessToken } from "@/server/auth/gallery-access";
+import { env } from "@/config/env";
 import { createCsrfToken } from "@/server/security/request-protection";
-import { buildGalleryPhotoFromAsset } from "@/server/services/public-gallery";
+import { getPrivateGalleryPageAccess } from "@/server/services/gallery-access";
 
 type CustomGalleryPageProps = {
   params: Promise<{ slug: string }>;
@@ -26,8 +24,28 @@ const errorLabels: Record<string, string> = {
 
 export const dynamic = "force-dynamic";
 
+export const metadata: Metadata = {
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+    googleBot: {
+      index: false,
+      follow: false,
+      noimageindex: true,
+    },
+  },
+};
+
+function normalizeDimensions(width: number | null, height: number | null) {
+  return {
+    width: width && width > 0 ? width : 4,
+    height: height && height > 0 ? height : 3,
+  };
+}
+
 export default async function CustomGalleryPage({ params, searchParams }: CustomGalleryPageProps) {
-  const { slug } = await params;
+  const { slug: capabilityToken } = await params;
   const resolvedSearchParams = await searchParams;
 
   if (!env.DATABASE_URL) {
@@ -39,39 +57,17 @@ export default async function CustomGalleryPage({ params, searchParams }: Custom
     );
   }
 
-  const shareLink = await prisma.galleryShareLink.findFirst({
-    where: {
-      slug,
-      isActive: true,
-      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-    },
-    include: {
-      gallery: {
-        include: {
-          assets: {
-            orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-          },
-        },
-      },
-    },
-  });
+  const access = await getPrivateGalleryPageAccess(capabilityToken);
 
-  if (!shareLink) {
+  if (!access) {
     notFound();
   }
 
-  const hasPassword = Boolean(shareLink.passwordHash);
-  let canAccess = !hasPassword;
-
-  if (hasPassword) {
-    const accessToken = (await cookies()).get(getGalleryAccessCookieName())?.value;
-
-    if (accessToken) {
-      canAccess = await verifyGalleryAccessToken(accessToken, slug);
-    }
+  if (!access.isAuthorized && !access.requiresPassword) {
+    redirect(`/api/gallery-access/authorize/${encodeURIComponent(capabilityToken)}`);
   }
 
-  if (!canAccess) {
+  if (!access.isAuthorized) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-lg flex-col justify-center px-4 py-10">
         <div className="editorial-card rounded p-6">
@@ -85,11 +81,21 @@ export default async function CustomGalleryPage({ params, searchParams }: Custom
           ) : null}
 
           <form className="mt-5 grid gap-3" action="/api/gallery-access/unlock" method="post">
-            <input type="hidden" name="slug" value={slug} />
+            <input type="hidden" name="slug" value={capabilityToken} />
             <input type="hidden" name="csrfToken" value={createCsrfToken()} />
-            <input type="hidden" name="redirectTo" value={`/g/${slug}`} />
-            <input className="editorial-input rounded px-3 py-2" name="password" type="password" placeholder="Password" required />
-            <TurnstileField siteKey={env.NEXT_PUBLIC_TURNSTILE_SITE_KEY} />
+            <input type="hidden" name="redirectTo" value={`/g/${capabilityToken}`} />
+            <label className="grid gap-1 text-sm" htmlFor="gallery-password">
+              <span>Password</span>
+              <input
+                id="gallery-password"
+                className="editorial-input rounded px-3 py-2"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                required
+              />
+            </label>
+            <TurnstileField action="gallery_unlock" siteKey={env.NEXT_PUBLIC_TURNSTILE_SITE_KEY} />
             <button className="editorial-button rounded px-4 py-2" type="submit">
               Unlock gallery
             </button>
@@ -101,21 +107,45 @@ export default async function CustomGalleryPage({ params, searchParams }: Custom
     );
   }
 
-  const publicBase = env.R2_PUBLIC_BASE_URL?.replace(/\/$/, "") ?? null;
   const downloadsRemaining =
-    shareLink.maxDownloads === null ? null : Math.max(shareLink.maxDownloads - shareLink.downloadCount, 0);
+    access.maxDownloads === null ? null : Math.max(access.maxDownloads - access.downloadCount, 0);
   const canDownload = downloadsRemaining === null || downloadsRemaining > 0;
-  const photos = publicBase
-    ? shareLink.gallery.assets.flatMap((asset) => {
-        const photo = buildGalleryPhotoFromAsset(
-          asset,
-          asset.originalFilename,
-          `/api/galleries/${slug}/assets/${asset.id}/download`,
-        );
+  const photos = access.gallery.assets.flatMap((asset) => {
+    if (!asset.smallStorageKey) {
+      return [];
+    }
 
-        return photo ? [photo] : [];
-      })
-    : [];
+    const originalDimensions = normalizeDimensions(asset.width, asset.height);
+    const smallDimensions = normalizeDimensions(asset.smallWidth ?? asset.width, asset.smallHeight ?? asset.height);
+    const mediumDimensions = normalizeDimensions(asset.mediumWidth ?? asset.width, asset.mediumHeight ?? asset.height);
+    const largeDimensions = normalizeDimensions(asset.largeWidth ?? asset.width, asset.largeHeight ?? asset.height);
+    const smallSrc = `/api/gallery-media/assets/${asset.id}/small`;
+    const mediumSrc = asset.mediumStorageKey
+      ? `/api/gallery-media/assets/${asset.id}/medium`
+      : smallSrc;
+    const largeSrc = asset.largeStorageKey
+      ? `/api/gallery-media/assets/${asset.id}/large`
+      : mediumSrc;
+
+    return [{
+      id: asset.id,
+      src: smallSrc,
+      smallSrc,
+      mediumSrc,
+      largeSrc,
+      width: originalDimensions.width,
+      height: originalDimensions.height,
+      smallWidth: smallDimensions.width,
+      smallHeight: smallDimensions.height,
+      mediumWidth: mediumDimensions.width,
+      mediumHeight: mediumDimensions.height,
+      largeWidth: largeDimensions.width,
+      largeHeight: largeDimensions.height,
+      placeholderDataUrl: asset.placeholderDataUrl ?? undefined,
+      alt: asset.originalFilename,
+      downloadHref: `/api/galleries/${capabilityToken}/assets/${asset.id}/download`,
+    }];
+  });
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-10 sm:px-6 lg:px-8">
@@ -123,21 +153,18 @@ export default async function CustomGalleryPage({ params, searchParams }: Custom
         <Link className="header-link" href="/portfolio">
           Back to portfolio
         </Link>
-        <p className="text-xs text-neutral-600">Custom gallery: {slug}</p>
+        <p className="text-xs text-neutral-600">Private client gallery</p>
       </nav>
 
       <header className="space-y-2">
-        <h1 className="editorial-heading text-5xl">{shareLink.gallery.title}</h1>
-        {shareLink.gallery.description ? <p className="text-sm text-neutral-700">{shareLink.gallery.description}</p> : null}
+        <h1 className="editorial-heading text-5xl">{access.gallery.title}</h1>
+        {access.gallery.description ? <p className="text-sm text-neutral-700">{access.gallery.description}</p> : null}
       </header>
 
       <section className="flex flex-wrap gap-3">
-        {shareLink.gallery.archiveObjectKey ? (
+        {access.gallery.archiveObjectKey ? (
           canDownload ? (
-            <a
-              className="editorial-button rounded px-4 py-2"
-              href={`/api/galleries/${slug}/archive-download`}
-            >
+            <a className="editorial-button rounded px-4 py-2" href={`/api/galleries/${capabilityToken}/archive-download`}>
               Download full gallery ZIP
             </a>
           ) : (
@@ -148,30 +175,37 @@ export default async function CustomGalleryPage({ params, searchParams }: Custom
         )}
       </section>
 
-      {!publicBase ? (
-        <p className="rounded bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-[0_12px_30px_rgba(146,64,14,0.08)]">
-          R2_PUBLIC_BASE_URL is not configured, so preview images cannot be rendered yet. Direct downloads still work.
+      {photos.length === 0 && access.gallery.assets.length > 0 ? (
+        <p className="rounded bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Secure previews are still being prepared. Originals are never used as a preview fallback.
         </p>
       ) : null}
 
-      <GalleryLightbox photos={photos} />
+      <GalleryLightbox
+        photos={photos}
+        disableOptimization
+        initialNextCursor={access.gallery.nextCursor}
+        loadMoreUrl="/api/gallery-media/assets"
+        downloadBasePath={`/api/galleries/${capabilityToken}/assets`}
+        totalCount={access.gallery.assetCount}
+      />
 
       <section className="space-y-2">
         <h2 className="editorial-kicker text-neutral-700">Original downloads</h2>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {canDownload
-            ? shareLink.gallery.assets.map((asset) => (
-                <a
-                  key={asset.id}
-                  className="editorial-card rounded px-3 py-2 text-xs transition hover:-translate-y-0.5"
-                  href={`/api/galleries/${slug}/assets/${asset.id}/download`}
-                >
-                  {asset.originalFilename}
-                </a>
-              ))
-            : (
-                <p className="text-sm text-neutral-600">Download limit reached for this gallery link.</p>
-              )}
+          {canDownload ? (
+            access.gallery.assets.map((asset) => (
+              <a
+                key={asset.id}
+                className="editorial-card flex min-h-11 items-center rounded px-3 py-2 text-xs transition hover:-translate-y-0.5"
+                href={`/api/galleries/${capabilityToken}/assets/${asset.id}/download`}
+              >
+                {asset.originalFilename}
+              </a>
+            ))
+          ) : (
+            <p className="text-sm text-neutral-600">Download limit reached for this gallery link.</p>
+          )}
         </div>
       </section>
 

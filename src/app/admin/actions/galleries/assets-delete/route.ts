@@ -3,9 +3,15 @@ import { z } from "zod";
 
 import { env } from "@/config/env";
 import { prisma } from "@/lib/db";
-import { deleteObjectByKey } from "@/server/services/storage";
 import { requireAdminRequestSession } from "@/server/auth/admin-guard";
 import { verifyMutationProtection } from "@/server/security/request-protection";
+import { getStorageAreaForGalleryVisibility } from "@/server/services/storage";
+import { invalidatePublicGalleryCache } from "@/server/services/public-cache";
+import {
+  attemptStorageDeletions,
+  enqueueStorageDeletions,
+  type StorageDeletionTarget,
+} from "@/server/services/storage-deletions";
 
 const deleteSchema = z.object({
   assetId: z.string().trim().min(1),
@@ -73,8 +79,13 @@ export async function POST(request: Request): Promise<NextResponse> {
       select: {
         id: true,
         storageKey: true,
+        sourceStorageArea: true,
         smallStorageKey: true,
         mediumStorageKey: true,
+        largeStorageKey: true,
+        gallery: {
+          select: { visibility: true },
+        },
       },
     });
 
@@ -86,20 +97,25 @@ export async function POST(request: Request): Promise<NextResponse> {
       return redirectToAdmin(request, "error=asset_delete_failed");
     }
 
-    const objectKeys = [asset.storageKey, asset.smallStorageKey, asset.mediumStorageKey].filter(
-      (objectKey): objectKey is string => Boolean(objectKey),
-    );
+    const area = getStorageAreaForGalleryVisibility(asset.gallery.visibility);
+    const deletionTargets: StorageDeletionTarget[] = [
+      asset.smallStorageKey,
+      asset.mediumStorageKey,
+      asset.largeStorageKey,
+    ]
+      .filter((objectKey): objectKey is string => Boolean(objectKey))
+      .map((objectKey) => ({ area, objectKey }));
+    deletionTargets.push({ area: asset.sourceStorageArea, objectKey: asset.storageKey });
 
-    await Promise.allSettled(objectKeys.map((objectKey) => deleteObjectByKey(objectKey)));
-
-    await prisma.galleryAsset.delete({
-      where: {
-        id: asset.id,
-      },
+    await prisma.$transaction(async (transaction) => {
+      await enqueueStorageDeletions(transaction, deletionTargets);
+      await transaction.galleryAsset.delete({ where: { id: asset.id } });
     });
+    await attemptStorageDeletions(deletionTargets);
+    invalidatePublicGalleryCache();
 
     if (jsonMode) {
-      return NextResponse.json({ ok: true, deletedAssetId: asset.id });
+      return NextResponse.json({ ok: true, deletedAssetId: asset.id, storageDeletionQueued: true });
     }
 
     return redirectToAdmin(request, "notice=asset_deleted");
@@ -117,7 +133,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     }
 
     if (jsonMode) {
-      return NextResponse.json({ error: "Unable to delete asset from storage and database." }, { status: 500 });
+      return NextResponse.json({ error: "Unable to remove the asset." }, { status: 500 });
     }
 
     return redirectToAdmin(request, "error=asset_delete_failed");
