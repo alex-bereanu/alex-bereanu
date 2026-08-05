@@ -1,363 +1,158 @@
-import { GalleryCategory, GalleryVisibility, Prisma } from "@/generated/prisma/client";
 import Link from "next/link";
+import { GalleryCategory, GalleryStatus, GalleryVisibility, Prisma } from "@/generated/prisma/client";
 
-import { AdminAlerts, AdminFooter, AdminNav } from "@/app/admin/_components/admin-chrome";
+import { AdminAlerts, AdminEmptyState, AdminShell, AdminStatus } from "@/app/admin/_components/admin-chrome";
 import { categoryLabels } from "@/app/admin/_lib/admin-options";
 import { env } from "@/config/env";
-import { AdminArchiveUpload } from "@/components/admin-archive-upload";
-import { AdminAssetManager } from "@/components/admin-asset-manager";
-import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
-import { AdminShareLinkForm } from "@/components/admin-share-link-form";
 import { prisma } from "@/lib/db";
 import { requireAdminPageSession } from "@/server/auth/admin-guard";
 import { createCsrfToken } from "@/server/security/request-protection";
+import { isAdminGalleryPhase2Enabled } from "@/server/services/admin-gallery-phase2";
 
 type AdminGalleriesPageProps = {
   searchParams: Promise<{
     notice?: string;
     error?: string;
-    galleryQ?: string;
-    view?: string;
+    q?: string;
+    category?: string;
+    visibility?: string;
+    state?: string;
+    access?: string;
+    page?: string;
   }>;
 };
 
+const PAGE_SIZE = 30;
+
 export const dynamic = "force-dynamic";
+
+function enumValue<T extends string>(values: readonly T[], value?: string): T | undefined {
+  return value && values.includes(value as T) ? value as T : undefined;
+}
 
 export default async function AdminGalleriesPage({ searchParams }: AdminGalleriesPageProps) {
   await requireAdminPageSession("/admin/galleries");
-  const resolvedSearchParams = await searchParams;
+  const params = await searchParams;
   const csrfToken = createCsrfToken();
+  const phase2 = isAdminGalleryPhase2Enabled();
 
   if (!env.DATABASE_URL) {
     return (
-      <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-10">
-        <h1 className="text-3xl font-semibold">Galleries</h1>
-        <p className="rounded border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
-          DATABASE_URL is not configured. Set it in <code>.env.local</code> to enable gallery management.
-        </p>
-        <AdminFooter csrfToken={csrfToken} />
-      </main>
+      <AdminShell active="galleries" title="Galleries" description="Manage public work and private client collections." csrfToken={csrfToken}>
+        <p className="admin-alert admin-alert-warning">DATABASE_URL is not configured. Set it in <code>.env.local</code> to enable gallery management.</p>
+      </AdminShell>
     );
   }
 
-  const galleryQuery = resolvedSearchParams.galleryQ?.trim() ?? "";
-  const openExpanded = resolvedSearchParams.view === "expanded";
+  const query = params.q?.trim().slice(0, 160) ?? "";
+  const category = enumValue(Object.values(GalleryCategory), params.category);
+  const visibility = enumValue(Object.values(GalleryVisibility), params.visibility);
+  const page = Math.max(1, Math.min(1000, Number.parseInt(params.page ?? "1", 10) || 1));
+  const now = new Date();
+  const where: Prisma.GalleryWhereInput = {
+    ...(query ? { OR: [
+      { title: { contains: query, mode: "insensitive" } },
+      { slug: { contains: query, mode: "insensitive" } },
+      { description: { contains: query, mode: "insensitive" } },
+    ] } : {}),
+    ...(category ? { category } : {}),
+    ...(visibility ? { visibility } : {}),
+    ...(phase2
+      ? params.state && Object.values(GalleryStatus).includes(params.state.toUpperCase() as GalleryStatus)
+        ? { status: params.state.toUpperCase() as GalleryStatus }
+        : {}
+      : params.state === "active" ? { isActive: true } : params.state === "inactive" ? { isActive: false } : {}),
+    ...(params.access === "active" ? {
+      shareLinks: { some: { isActive: true, revokedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] } },
+    } : {}),
+  };
 
-  const galleryWhere: Prisma.GalleryWhereInput = galleryQuery
-    ? {
-        OR: [
-          { title: { contains: galleryQuery, mode: "insensitive" } },
-          { slug: { contains: galleryQuery, mode: "insensitive" } },
-          { description: { contains: galleryQuery, mode: "insensitive" } },
-        ],
-      }
-    : {};
+  const [galleries, total, lifecycleRows] = await Promise.all([
+    prisma.gallery.findMany({
+      where,
+      orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
+      skip: (page - 1) * PAGE_SIZE,
+      take: PAGE_SIZE,
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        description: true,
+        category: true,
+        visibility: true,
+        isActive: true,
+        archiveStatus: true,
+        updatedAt: true,
+        _count: { select: { assets: phase2 ? { where: { deletedAt: null } } : true, shareLinks: { where: { isActive: true, revokedAt: null } } } },
+      },
+    }),
+    prisma.gallery.count({ where }),
+    phase2 ? prisma.gallery.findMany({ where, orderBy: [{ updatedAt: "desc" }, { id: "asc" }], skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE, select: { id: true, status: true } }) : Promise.resolve([]),
+  ]);
+  const lifecycleById = new Map(lifecycleRows.map((row) => [row.id, row.status]));
 
-  const galleries = await prisma.gallery.findMany({
-    where: galleryWhere,
-    orderBy: [{ category: "asc" }, { updatedAt: "desc" }],
-    include: {
-      _count: {
-        select: {
-          assets: true,
-          shareLinks: true,
-        },
-      },
-      assets: {
-        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
-        take: openExpanded ? 41 : 0,
-        select: {
-          id: true,
-          originalFilename: true,
-          smallStorageKey: true,
-          mimeType: true,
-          width: true,
-          height: true,
-          status: true,
-          failureReason: true,
-        },
-      },
-      shareLinks: {
-        orderBy: { createdAt: "desc" },
-        take: 8,
-        select: {
-          id: true,
-          slug: true,
-          recipientEmail: true,
-          expiresAt: true,
-          isActive: true,
-          tokenHash: true,
-          revokedAt: true,
-          createdAt: true,
-        },
-      },
-    },
-    take: 120,
-  });
-
-  const categoryOptions = Object.values(GalleryCategory);
-  const visibilityOptions = Object.values(GalleryVisibility);
-  const r2PublicBase = env.R2_PUBLIC_BASE_URL?.replace(/\/$/, "") ?? null;
-  const galleriesByCategory = categoryOptions.map((category) => ({
-    category,
-    galleries: galleries.filter((gallery) => gallery.category === category),
-  }));
-  const viewHref = openExpanded
-    ? `/admin/galleries${galleryQuery ? `?galleryQ=${encodeURIComponent(galleryQuery)}` : ""}`
-    : `/admin/galleries?view=expanded${galleryQuery ? `&galleryQ=${encodeURIComponent(galleryQuery)}` : ""}`;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageHref = (target: number) => {
+    const next = new URLSearchParams();
+    if (query) next.set("q", query);
+    if (category) next.set("category", category);
+    if (visibility) next.set("visibility", visibility);
+    if (params.state) next.set("state", params.state);
+    if (params.access === "active") next.set("access", "active");
+    next.set("page", String(target));
+    return `/admin/galleries?${next.toString()}`;
+  };
 
   return (
-    <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-10 sm:px-6 lg:px-8">
-      <header className="space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="space-y-2">
-            <p className="text-xs font-medium uppercase text-neutral-500">Admin</p>
-            <h1 className="text-3xl font-semibold">Galleries</h1>
-            <p className="text-sm text-neutral-700">
-              Review galleries by category. Closed panels are compact; open a panel for editing, assets, archives, and custom links.
-            </p>
-          </div>
-          <Link className="rounded bg-black px-4 py-2 text-sm font-medium text-white" href="/admin">
-            Create gallery
-          </Link>
-        </div>
-        <AdminNav active="galleries" />
-      </header>
+    <AdminShell
+      active="galleries"
+      title="Galleries"
+      description="A fast summary of every collection. Photos and management tools load only after you open a gallery."
+      csrfToken={csrfToken}
+      actions={<Link className="admin-primary-button" href="/admin/galleries/new">New gallery</Link>}
+    >
+      <AdminAlerts error={params.error} notice={params.notice} />
 
-      <AdminAlerts error={resolvedSearchParams.error} notice={resolvedSearchParams.notice} />
-
-      <section className="flex flex-wrap items-center justify-between gap-3 rounded border bg-white p-4">
-        <form className="flex flex-wrap items-center gap-2" method="get">
-          {openExpanded ? <input type="hidden" name="view" value="expanded" /> : null}
-          <input
-            className="rounded border px-3 py-2 text-xs"
-            name="galleryQ"
-            defaultValue={galleryQuery}
-            placeholder="Search galleries..."
-          />
-          <button className="rounded border bg-white px-3 py-2 text-xs font-medium" type="submit">
-            Filter
-          </button>
+      <section className="admin-panel">
+        <form className="admin-form-grid admin-form-grid-two" method="get">
+          <label className="admin-form-field sm:col-span-2"><span>Search</span><input name="q" defaultValue={query} placeholder="Title, slug, or description" /></label>
+          <label className="admin-form-field"><span>Category</span><select name="category" defaultValue={category ?? ""}><option value="">All categories</option>{Object.values(GalleryCategory).map((value) => <option key={value} value={value}>{categoryLabels[value]}</option>)}</select></label>
+          <label className="admin-form-field"><span>Visibility</span><select name="visibility" defaultValue={visibility ?? ""}><option value="">Public and private</option>{Object.values(GalleryVisibility).map((value) => <option key={value} value={value}>{value === "PUBLIC" ? "Public website" : "Private client"}</option>)}</select></label>
+          <label className="admin-form-field"><span>State</span><select name="state" defaultValue={params.state ?? ""}><option value="">All states</option>{phase2 ? <><option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option></> : <><option value="active">Active</option><option value="inactive">Inactive</option></>}</select></label>
+          <div className="flex items-end gap-2"><button className="admin-primary-button" type="submit">Apply filters</button><Link className="admin-secondary-button" href="/admin/galleries">Clear</Link></div>
         </form>
-
-        <Link className="rounded border bg-white px-3 py-2 text-xs font-medium" href={viewHref}>
-          {openExpanded ? "Compact view" : "Expanded view"}
-        </Link>
       </section>
 
       {galleries.length === 0 ? (
-        <p className="rounded border border-dashed border-neutral-300 bg-neutral-50 p-4 text-sm text-neutral-700">
-          No galleries match the current filter.
-        </p>
+        <AdminEmptyState
+          title={total === 0 && !query && !category && !visibility ? "Create your first gallery" : "No galleries match these filters"}
+          body={total === 0 ? "Create a collection and then add photos in its dedicated workspace." : "Try clearing or widening the current filters."}
+          action={<Link className="admin-primary-button" href="/admin/galleries/new">Create gallery</Link>}
+        />
       ) : (
-        galleriesByCategory.map(({ category, galleries: categoryGalleries }) =>
-          categoryGalleries.length > 0 ? (
-            <section key={category} className="space-y-3">
-              <div className="flex items-end justify-between border-b pb-2">
-                <h2 className="text-xl font-semibold">{categoryLabels[category]}</h2>
-                <p className="text-xs uppercase text-neutral-500">
-                  {categoryGalleries.length} {categoryGalleries.length === 1 ? "gallery" : "galleries"}
-                </p>
-              </div>
-
-              <div className="space-y-3">
-                {categoryGalleries.map((gallery) => (
-                  <details key={gallery.id} className="group rounded border bg-white" open={openExpanded}>
-                    <summary className="grid cursor-pointer gap-3 p-4 marker:text-neutral-500 md:grid-cols-[1fr_auto] md:items-center">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="truncate text-lg font-semibold">{gallery.title}</h3>
-                          <span className="rounded border px-2 py-0.5 text-[11px] uppercase text-neutral-600">
-                            {gallery.visibility}
-                          </span>
-                          <span
-                            className={`rounded border px-2 py-0.5 text-[11px] uppercase ${
-                              gallery.isActive ? "text-emerald-700" : "text-neutral-500"
-                            }`}
-                          >
-                            {gallery.isActive ? "Active" : "Inactive"}
-                          </span>
-                        </div>
-                        <p className="mt-1 truncate text-sm text-neutral-600">/{gallery.slug}</p>
-                        {gallery.description ? (
-                          <p className="mt-1 line-clamp-2 text-sm text-neutral-700">{gallery.description}</p>
-                        ) : null}
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-2 text-center text-xs text-neutral-700">
-                        <span className="rounded bg-neutral-50 px-3 py-2">
-                          <strong className="block text-base text-neutral-950">{gallery._count.assets}</strong>
-                          Assets
-                        </span>
-                        <span className="rounded bg-neutral-50 px-3 py-2">
-                          <strong className="block text-base text-neutral-950">{gallery._count.shareLinks}</strong>
-                          Links
-                        </span>
-                        <span className="rounded bg-neutral-50 px-3 py-2">
-                          <strong className="block text-base text-neutral-950">{gallery.archiveFilename ? "Yes" : "No"}</strong>
-                          ZIP
-                        </span>
-                      </div>
-                    </summary>
-
-                    {openExpanded ? (
-                    <div className="border-t p-5">
-                      <div className="grid gap-4 lg:grid-cols-3">
-                        <div className="space-y-3 lg:col-span-2">
-                          <form className="grid gap-2" action="/admin/actions/galleries/update" method="post">
-                            <input type="hidden" name="csrfToken" value={csrfToken} />
-                            <input type="hidden" name="id" value={gallery.id} />
-                            <label className="form-field">
-                              <span>Gallery Title</span>
-                              <input className="rounded border px-3 py-2 text-sm" name="title" defaultValue={gallery.title} autoComplete="off" required />
-                            </label>
-                            <label className="form-field">
-                              <span>URL Slug</span>
-                              <input className="rounded border px-3 py-2 text-sm" name="slug" defaultValue={gallery.slug} autoComplete="off" spellCheck={false} required />
-                            </label>
-                            <label className="form-field">
-                              <span>Category</span>
-                              <select className="rounded border px-3 py-2 text-sm" name="category" defaultValue={gallery.category}>
-                                {categoryOptions.map((option) => <option key={option} value={option}>{categoryLabels[option]}</option>)}
-                              </select>
-                            </label>
-                            <label className="form-field">
-                              <span>Visibility</span>
-                              <select className="rounded border px-3 py-2 text-sm" name="visibility" defaultValue={gallery.visibility}>
-                                {visibilityOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                              </select>
-                            </label>
-                            <label className="form-field">
-                              <span>Description <span className="font-normal text-neutral-500">(Optional)</span></span>
-                              <textarea className="rounded border px-3 py-2 text-sm" name="description" defaultValue={gallery.description ?? ""} rows={3} />
-                            </label>
-                            <label className="inline-flex items-center gap-2 text-xs text-neutral-700">
-                              <input type="checkbox" name="isActive" defaultChecked={gallery.isActive} /> Active
-                            </label>
-                            <button className="min-h-11 rounded border px-3 py-2 text-xs font-medium" type="submit">
-                              Save Changes
-                            </button>
-                          </form>
-
-                          <AdminAssetManager
-                            key={`${gallery.id}:${gallery.assets.slice(0, 40).map((asset) => asset.id).join(",")}`}
-                            galleryId={gallery.id}
-                            assets={gallery.assets.slice(0, 40).map(({ smallStorageKey, ...asset }) => ({
-                              ...asset,
-                              previewUrl:
-                                asset.status === "READY" && gallery.visibility === "PUBLIC" && r2PublicBase
-                                  ? `${r2PublicBase}/${smallStorageKey}`
-                                  : null,
-                            }))}
-                            csrfToken={csrfToken}
-                            initialNextCursor={gallery.assets.length > 40 ? gallery.assets[39]?.id ?? null : null}
-                            totalCount={gallery._count.assets}
-                          />
-
-                          <form action="/admin/actions/galleries/delete" method="post">
-                            <input type="hidden" name="csrfToken" value={csrfToken} />
-                            <input type="hidden" name="id" value={gallery.id} />
-                            <ConfirmSubmitButton
-                              className="min-h-11 rounded border border-red-300 px-3 py-2 text-xs font-medium text-red-700"
-                              label="Delete Gallery"
-                              confirmLabel="Delete Gallery Permanently"
-                            />
-                          </form>
-                        </div>
-
-                        <div className="space-y-3">
-                          <div className="rounded border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-700">
-                            <p>Assets: {gallery._count.assets}</p>
-                            <p>Custom links: {gallery._count.shareLinks}</p>
-                            <p>Archive: {gallery.archiveFilename ?? "none"}</p>
-                            <p>Archive status: {gallery.archiveStatus}</p>
-                          </div>
-
-                          <AdminArchiveUpload
-                            galleryId={gallery.id}
-                            csrfToken={csrfToken}
-                            currentArchiveFilename={gallery.archiveFilename}
-                          />
-
-                          <form action="/admin/actions/galleries/archive-delete" method="post">
-                            <input type="hidden" name="csrfToken" value={csrfToken} />
-                            <input type="hidden" name="galleryId" value={gallery.id} />
-                            <ConfirmSubmitButton
-                              className="min-h-11 rounded border border-red-300 px-3 py-2 text-xs font-medium text-red-700"
-                              label="Delete ZIP Archive"
-                              confirmLabel="Delete ZIP Permanently"
-                            />
-                          </form>
-
-                          {gallery.visibility === "PRIVATE" && gallery.isActive ? (
-                            <AdminShareLinkForm csrfToken={csrfToken} galleryId={gallery.id} />
-                          ) : (
-                            <p className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-                              Secure client links can only be created for active private galleries.
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      {gallery.shareLinks.length > 0 ? (
-                        <div className="mt-4 overflow-x-auto">
-                          <table className="min-w-full text-left text-xs">
-                            <thead>
-                              <tr className="border-b text-neutral-600">
-                                <th className="px-2 py-1">Capability</th>
-                                <th className="px-2 py-1">Recipient</th>
-                                <th className="px-2 py-1">Expires</th>
-                                <th className="px-2 py-1">Status</th>
-                                <th className="px-2 py-1">Action</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {gallery.shareLinks.map((link) => (
-                                <tr key={link.id} className="border-b">
-                                  <td className="px-2 py-1 font-medium">
-                                    {link.tokenHash ? "Hashed secure token" : "Legacy link disabled"}
-                                  </td>
-                                  <td className="px-2 py-1">{link.recipientEmail ?? "-"}</td>
-                                  <td className="px-2 py-1">{link.expiresAt ? link.expiresAt.toLocaleString() : "-"}</td>
-                                  <td className="px-2 py-1">{link.isActive && !link.revokedAt ? "Active" : "Revoked"}</td>
-                                  <td className="px-2 py-1">
-                                    {link.isActive ? (
-                                      <form action="/admin/actions/galleries/share-link-revoke" method="post">
-                                        <input type="hidden" name="csrfToken" value={csrfToken} />
-                                        <input type="hidden" name="galleryId" value={gallery.id} />
-                                        <input type="hidden" name="shareLinkId" value={link.id} />
-                                        <button className="rounded border border-red-300 px-2 py-1 text-red-700" type="submit">
-                                          Revoke
-                                        </button>
-                                      </form>
-                                    ) : "—"}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : null}
-                    </div>
-                    ) : (
-                      <div className="border-t p-4">
-                        <Link
-                          className="inline-flex rounded bg-black px-3 py-2 text-xs font-medium text-white"
-                          href={`/admin/galleries?view=expanded&galleryQ=${encodeURIComponent(gallery.slug)}`}
-                        >
-                          Manage this gallery
-                        </Link>
-                      </div>
-                    )}
-                  </details>
+        <section className="admin-panel">
+          <div className="admin-panel-header"><div><h2>{total} {total === 1 ? "gallery" : "galleries"}</h2><p className="admin-panel-copy">Showing {Math.min((page - 1) * PAGE_SIZE + 1, total)}–{Math.min(page * PAGE_SIZE, total)}.</p></div></div>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead><tr><th>Gallery</th><th>Category</th><th>Content</th><th>Access</th><th>Status</th><th>Updated</th><th><span className="sr-only">Actions</span></th></tr></thead>
+              <tbody>
+                {galleries.map((gallery) => (
+                  <tr key={gallery.id}>
+                    <td className="max-w-sm"><Link className="font-semibold underline decoration-neutral-300 underline-offset-4" href={`/admin/galleries/${gallery.id}`}>{gallery.title}</Link><span className="mt-1 block text-xs text-neutral-500">/{gallery.slug}</span>{gallery.description ? <span className="mt-1 line-clamp-1 block text-xs text-neutral-600">{gallery.description}</span> : null}</td>
+                    <td>{categoryLabels[gallery.category]}</td>
+                    <td>{gallery._count.assets} {gallery._count.assets === 1 ? "photo" : "photos"}</td>
+                    <td><AdminStatus>{gallery.visibility}</AdminStatus>{gallery._count.shareLinks > 0 ? <span className="mt-1 block text-xs text-neutral-500">{gallery._count.shareLinks} live link{gallery._count.shareLinks === 1 ? "" : "s"}</span> : null}</td>
+                    <td>{(() => { const state = lifecycleById.get(gallery.id); return <AdminStatus tone={(state === "PUBLISHED" || (!phase2 && gallery.isActive)) ? "success" : state === "ARCHIVED" ? "warning" : "neutral"}>{state ?? (gallery.isActive ? "Active" : "Inactive")}</AdminStatus>; })()}</td>
+                    <td>{gallery.updatedAt.toLocaleDateString()}</td>
+                    <td><Link className="admin-secondary-button" href={`/admin/galleries/${gallery.id}`}>Manage</Link></td>
+                  </tr>
                 ))}
-              </div>
-            </section>
-          ) : null,
-        )
+              </tbody>
+            </table>
+          </div>
+          {totalPages > 1 ? <nav aria-label="Gallery pages" className="mt-4 flex items-center justify-between gap-3"><span className="text-xs text-neutral-600">Page {page} of {totalPages}</span><div className="flex gap-2">{page > 1 ? <Link className="admin-secondary-button" href={pageHref(page - 1)}>Previous</Link> : null}{page < totalPages ? <Link className="admin-secondary-button" href={pageHref(page + 1)}>Next</Link> : null}</div></nav> : null}
+        </section>
       )}
-
-      <AdminFooter csrfToken={csrfToken} />
-    </main>
+    </AdminShell>
   );
 }

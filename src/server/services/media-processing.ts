@@ -15,6 +15,7 @@ import { z } from "zod";
 
 import { env } from "@/config/env";
 import { prisma } from "@/lib/db";
+import { isAdminGalleryPhase2Enabled } from "@/server/services/admin-gallery-phase2";
 import { MAX_IMAGE_DIMENSION, MAX_IMAGE_PIXEL_COUNT } from "@/lib/upload-limits";
 import { validateImageFileSignature } from "@/server/security/upload-validation";
 import {
@@ -34,6 +35,7 @@ import {
 
 const LOCK_TIMEOUT_MS = 15 * 60 * 1000;
 const MAX_BATCH_SIZE = 10;
+const IMAGE_VARIANT_VERSION = "v2";
 const IMAGE_FORMAT_BY_MIME: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/png": "png",
@@ -42,9 +44,9 @@ const IMAGE_FORMAT_BY_MIME: Record<string, string> = {
   "image/avif": "avif",
 };
 const VARIANTS = [
-  { name: "small", maxSize: 480, quality: 72 },
-  { name: "medium", maxSize: 1280, quality: 78 },
-  { name: "large", maxSize: 2560, quality: 82 },
+  { name: "small", maxSize: 800, quality: 82 },
+  { name: "medium", maxSize: 1440, quality: 84 },
+  { name: "large", maxSize: 2560, quality: 86 },
 ] as const;
 
 const scannerResponseSchema = z.object({
@@ -182,7 +184,7 @@ async function generateImageOutputs(input: {
         .resize({ width: variant.maxSize, height: variant.maxSize, fit: "inside", withoutEnlargement: true })
         .webp({ quality: variant.quality, effort: 5 })
         .toBuffer({ resolveWithObject: true });
-      const objectKey = `${prefix}/${input.contentHash.slice(0, 20)}-${variant.maxSize}.webp`;
+      const objectKey = `${prefix}/${input.contentHash.slice(0, 20)}-${IMAGE_VARIANT_VERSION}-${variant.maxSize}-q${variant.quality}.webp`;
 
       variants.push([
         variant.name,
@@ -222,7 +224,11 @@ async function uploadGeneratedVariants(
         objectKey: variant.objectKey,
         contentType: "image/webp",
         body: variant.buffer,
-        metadata: { "source-format": "verified", "metadata-stripped": "true" },
+        metadata: {
+          "source-format": "verified",
+          "metadata-stripped": "true",
+          "variant-version": IMAGE_VARIANT_VERSION,
+        },
       }),
     ),
   );
@@ -311,6 +317,7 @@ async function processImageIngest(job: ClaimedJob): Promise<void> {
         failureReason: null,
         readyAt: new Date(),
       },
+      select: { id: true },
     });
     await transaction.mediaUploadSession.update({
       where: { id: session.id },
@@ -350,6 +357,7 @@ async function processImageRebuild(job: ClaimedJob): Promise<void> {
   await prisma.galleryAsset.update({
     where: { id: asset.id },
     data: { status: MediaStatus.PROCESSING, failureReason: null },
+    select: { id: true },
   });
   const buffer = await getObjectBuffer(asset.storageKey, sourceArea);
   const contentHash = sha256(buffer);
@@ -414,6 +422,7 @@ async function processImageRebuild(job: ClaimedJob): Promise<void> {
         largeHeight: outputs.variants.large.height,
         largeSizeBytes: outputs.variants.large.sizeBytes,
       },
+      select: { id: true },
     });
     await transaction.mediaProcessingJob.update({
       where: { id: job.id },
@@ -521,6 +530,7 @@ async function processArchive(job: ClaimedJob): Promise<void> {
         archiveSizeBytes: session.expectedSizeBytes,
         archiveFailureReason: null,
       },
+      select: { id: true },
     });
     await transaction.mediaUploadSession.update({
       where: { id: session.id },
@@ -678,6 +688,7 @@ export async function enqueueAssetRebuilds(assetIds: string[]): Promise<number> 
   const assets = await prisma.galleryAsset.findMany({
     where: {
       id: { in: assetIds },
+      ...(isAdminGalleryPhase2Enabled() ? { deletedAt: null } : {}),
       processingJobs: {
         none: { status: { in: [MediaJobStatus.PENDING, MediaJobStatus.PROCESSING, MediaJobStatus.RETRY] } },
       },

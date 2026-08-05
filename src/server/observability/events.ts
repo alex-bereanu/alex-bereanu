@@ -3,7 +3,7 @@ import "server-only";
 import { env } from "@/config/env";
 
 type OperationalEvent = {
-  kind: "csp-violation" | "maintenance" | "server-error" | "web-vital";
+  kind: "client-delivery" | "csp-violation" | "maintenance" | "server-error" | "web-vital";
   severity: "info" | "warning" | "error";
   data: Record<string, string | number | boolean | null | undefined>;
 };

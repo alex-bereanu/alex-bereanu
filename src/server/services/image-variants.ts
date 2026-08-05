@@ -1,6 +1,7 @@
 import sharp from "sharp";
 
 import { prisma } from "@/lib/db";
+import { isAdminGalleryPhase2Enabled } from "@/server/services/admin-gallery-phase2";
 import { MAX_IMAGE_DIMENSION, MAX_IMAGE_PIXEL_COUNT } from "@/lib/upload-limits";
 import {
   deleteObjectByKey,
@@ -141,6 +142,23 @@ export async function prepareSiteContentImageVariants(
   return variants;
 }
 
+export async function preparePrivateSiteContentImageVariants(
+  originalBuffer: Buffer,
+  objectKeySeed: string,
+): Promise<GeneratedVariants> {
+  const variants = await generateImageVariants(originalBuffer, objectKeySeed);
+  try {
+    await uploadVariants(variants, "PRIVATE");
+  } catch (error) {
+    await Promise.allSettled([
+      deleteObjectByKey(variants.small.objectKey, "PRIVATE"),
+      deleteObjectByKey(variants.medium.objectKey, "PRIVATE"),
+    ]);
+    throw error;
+  }
+  return variants;
+}
+
 async function uploadVariants(variants: GeneratedVariants, area: StorageArea): Promise<void> {
   await Promise.all([
     uploadObject({
@@ -205,6 +223,7 @@ async function processGalleryAssetVariant(asset: {
       mediumHeight: variants.medium.height,
       mediumSizeBytes: variants.medium.sizeBytes,
     },
+    select: { id: true },
   });
 }
 
@@ -218,6 +237,7 @@ export async function processGalleryAssetVariants(assetIds: string[]): Promise<v
       id: {
         in: assetIds,
       },
+      ...(isAdminGalleryPhase2Enabled() ? { deletedAt: null } : {}),
     },
     select: {
       id: true,

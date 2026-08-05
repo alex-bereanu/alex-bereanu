@@ -13,6 +13,7 @@ import {
   validateZipUploadMetadata,
 } from "@/server/security/upload-validation";
 import { createGalleryUploadSession } from "@/server/services/media-upload-sessions";
+import { isAdminPhase6ReleaseEnabled } from "@/server/services/admin-phase6-release";
 
 const requestSchema = z.object({
   galleryId: z.string().trim().min(1),
@@ -26,6 +27,10 @@ export async function POST(request: Request): Promise<NextResponse> {
   const authRedirect = await requireAdminRequestSession(request);
   if (authRedirect) {
     return authRedirect;
+  }
+
+  if (isAdminPhase6ReleaseEnabled()) {
+    return NextResponse.json({ error: "Archive delivery is retired." }, { status: 404 });
   }
 
   if (!env.DATABASE_URL) {

@@ -1,11 +1,12 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import PhotoAlbum, { type Photo } from "react-photo-album";
 
 import type { LightboxPhoto } from "./gallery-lightbox-overlay";
+import { ResponsiveGalleryImage } from "./responsive-gallery-image";
+import { ClientPhotoActions } from "./client-photo-actions";
 
 const GalleryLightboxOverlay = dynamic(
   () => import("./gallery-lightbox-overlay").then((module) => module.GalleryLightboxOverlay),
@@ -35,7 +36,14 @@ type PagePayload = {
   nextCursor?: string | null;
 };
 
-const IMAGE_QUALITY = 75;
+type ResponsiveAlbumPhoto = Photo & {
+  smallSrc: string;
+  mediumSrc?: string;
+  smallWidth?: number;
+  mediumWidth?: number;
+  downloadHref?: string;
+  downloadFilename?: string;
+};
 
 function preloadLightbox(): void {
   void import("./gallery-lightbox-overlay");
@@ -116,7 +124,7 @@ export function GalleryLightbox({
   }
 
   const visiblePhotos = revealOnScroll ? photos.slice(0, visibleCount) : photos;
-  const photoAlbumItems: Photo[] = useMemo(
+  const photoAlbumItems: ResponsiveAlbumPhoto[] = useMemo(
     () =>
       visiblePhotos.map((photo) => ({
         key: photo.id,
@@ -124,6 +132,12 @@ export function GalleryLightbox({
         width: photo.width,
         height: photo.height,
         alt: photo.alt,
+        smallSrc: photo.smallSrc ?? photo.src,
+        mediumSrc: photo.mediumSrc,
+        smallWidth: photo.smallWidth,
+        mediumWidth: photo.mediumWidth,
+        downloadHref: photo.downloadHref,
+        downloadFilename: photo.downloadFilename,
       })),
     [visiblePhotos],
   );
@@ -155,32 +169,36 @@ export function GalleryLightbox({
           spacing={spacing}
           targetRowHeight={targetRowHeight}
           render={{
-            image: (
-              { src, alt, title, sizes, className, style, loading, fetchPriority, decoding },
-              { width, height },
-            ) => (
-              <Image
-                src={src as string}
-                alt={alt ?? ""}
-                title={title}
+            photo: ({ onClick }, { width, height, index: photoIndex, photo }) => (
+              <div
+                key={photo.key ?? photo.src}
+                className="react-photo-album--photo client-gallery-photo"
+                style={{
+                  "--react-photo-album--photo-width": width,
+                  "--react-photo-album--photo-height": height,
+                } as CSSProperties}
+              >
+                <button className="client-gallery-photo-open" type="button" onClick={onClick} aria-label={`Open ${photo.alt || "photo"} in gallery`}>
+                  <ResponsiveGalleryImage
+                smallSrc={photo.smallSrc ?? photo.src}
+                mediumSrc={photo.mediumSrc}
+                smallWidth={photo.smallWidth}
+                mediumWidth={photo.mediumWidth}
+                alt={photo.alt ?? ""}
+                title={photo.title}
                 width={Math.max(1, Math.round(width))}
                 height={Math.max(1, Math.round(height))}
-                sizes={sizes}
-                className={className}
-                style={style}
-                loading={loading}
-                fetchPriority={fetchPriority}
-                decoding={decoding}
-                quality={IMAGE_QUALITY}
+                sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 33vw"
+                className="react-photo-album--image"
+                loading={photoIndex === 0 ? "eager" : "lazy"}
+                fetchPriority={photoIndex === 0 ? "high" : "auto"}
+                decoding="async"
                 unoptimized={disableOptimization}
               />
+                </button>
+                {photo.downloadHref ? <ClientPhotoActions compact downloadHref={photo.downloadHref} filename={photo.downloadFilename || photo.alt || "photo"} /> : null}
+              </div>
             ),
-          }}
-          componentsProps={{
-            image: ({ index: photoIndex }) => ({
-              loading: photoIndex === 0 ? "eager" : "lazy",
-              fetchPriority: photoIndex === 0 ? "high" : "auto",
-            }),
           }}
           onClick={({ index: clickedIndex, event }) => openLightbox(clickedIndex, event.currentTarget)}
         />
@@ -200,12 +218,12 @@ export function GalleryLightbox({
             onClick={loadMore}
             disabled={isLoadingMore}
           >
-            {isLoadingMore ? "Loading..." : "Load more photos"}
+            {isLoadingMore ? "Loading…" : "Load More Photos"}
           </button>
           <p className="text-xs text-neutral-500" aria-live="polite">
             Showing {photos.length}{totalCount ? ` of ${totalCount}` : ""} photos
           </p>
-          {loadError ? <p className="text-sm text-red-700">{loadError}</p> : null}
+          {loadError ? <p className="text-sm text-red-700" role="alert">{loadError}</p> : null}
         </div>
       ) : null}
 

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 
-import { env } from "@/config/env";
 import { prisma } from "@/lib/db";
 import { requireAdminRequestSession } from "@/server/auth/admin-guard";
+import { isAdminGalleryPhase2Enabled } from "@/server/services/admin-gallery-phase2";
 
 const PAGE_SIZE = 40;
 
@@ -23,34 +23,19 @@ export async function GET(request: Request): Promise<NextResponse> {
   });
   if (!gallery) return NextResponse.json({ error: "Gallery not found." }, { status: 404 });
 
-  const assets = await prisma.galleryAsset.findMany({
-    where: { galleryId },
-    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
-    cursor: { id: cursor },
-    skip: 1,
-    take: PAGE_SIZE + 1,
-    select: {
-      id: true,
-      originalFilename: true,
-      smallStorageKey: true,
-      mimeType: true,
-      width: true,
-      height: true,
-      status: true,
-      failureReason: true,
-    },
-  });
+  const phase2 = isAdminGalleryPhase2Enabled();
+  const common = { where: { galleryId, ...(phase2 ? { deletedAt: null } : {}) }, orderBy: [{ sortOrder: "asc" as const }, { createdAt: "asc" as const }, { id: "asc" as const }], cursor: { id: cursor }, skip: 1, take: PAGE_SIZE + 1 };
+  const assets = phase2
+    ? await prisma.galleryAsset.findMany({ ...common, select: { id: true, originalFilename: true, mimeType: true, width: true, height: true, status: true, failureReason: true, altText: true, caption: true, focalX: true, focalY: true, capturedAt: true } })
+    : (await prisma.galleryAsset.findMany({ ...common, select: { id: true, originalFilename: true, mimeType: true, width: true, height: true, status: true, failureReason: true, capturedAt: true } })).map((asset) => ({ ...asset, altText: null, caption: null, focalX: null, focalY: null }));
   const pageAssets = assets.slice(0, PAGE_SIZE);
-  const publicBase = env.R2_PUBLIC_BASE_URL?.replace(/\/$/, "") ?? null;
 
   return NextResponse.json(
     {
-      assets: pageAssets.map(({ smallStorageKey, ...asset }) => ({
+      assets: pageAssets.map((asset) => ({
         ...asset,
-        previewUrl:
-          asset.status === "READY" && gallery.visibility === "PUBLIC" && publicBase && smallStorageKey
-            ? `${publicBase}/${smallStorageKey}`
-            : null,
+        capturedAt: asset.capturedAt?.toISOString() ?? null,
+        previewUrl: asset.status === "READY" ? `/admin/media/assets/${asset.id}/small` : null,
       })),
       nextCursor: assets.length > PAGE_SIZE ? pageAssets[PAGE_SIZE - 1]?.id ?? null : null,
     },

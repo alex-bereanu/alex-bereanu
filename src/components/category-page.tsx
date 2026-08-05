@@ -54,7 +54,7 @@ export async function CategoryPage({
             <article key={gallery.id} className="space-y-3 rounded border bg-white p-4 sm:p-5">
               <header className="space-y-1">
                 <h2 className="editorial-heading text-2xl">{gallery.title}</h2>
-                {gallery.description ? <p className="text-sm text-neutral-700">{gallery.description}</p> : null}
+                {gallery.description ? <p className="whitespace-pre-wrap text-sm text-neutral-700">{gallery.description}</p> : null}
               </header>
 
               {missingPublicBase ? (

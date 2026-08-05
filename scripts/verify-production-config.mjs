@@ -1,6 +1,7 @@
 const required = [
   "NEXT_PUBLIC_SITE_URL",
   "ADMIN_PANEL_BASE_URL",
+  "ADMIN_STEP_UP_MAX_AGE_SECONDS",
   "DATABASE_URL",
   "OAUTH_STATE_SECRET",
   "GALLERY_ACCESS_SECRET",
@@ -28,7 +29,9 @@ const required = [
   "OBSERVABILITY_WEBHOOK_SECRET",
   "WEB_VITALS_SAMPLE_RATE",
   "AUDIT_RETENTION_DAYS",
+  "DELIVERY_LOG_RETENTION_DAYS",
   "EMAIL_LOG_RETENTION_DAYS",
+  "ADMIN_PHASE6_RELEASE_ENABLED",
 ];
 
 const failures = [];
@@ -40,6 +43,51 @@ if (process.env.ADMIN_AUTH_MODE !== "google") failures.push("ADMIN_AUTH_MODE mus
 if (process.env.ADMIN_SETUP_TOKEN) failures.push("ADMIN_SETUP_TOKEN must be unset");
 if (process.env.DATABASE_URL && !/[?&]sslmode=verify-full(?:&|$)/.test(process.env.DATABASE_URL)) {
   failures.push("DATABASE_URL must use sslmode=verify-full");
+}
+
+if (process.env.ADMIN_GALLERY_PHASE2_ENABLED === "true" || process.env.ADMIN_CONTENT_PHASE3_ENABLED === "true" || process.env.ADMIN_CLIENT_DELIVERY_PHASE4_ENABLED === "true" || process.env.ADMIN_PHASE6_RELEASE_ENABLED === "true") {
+  if (!process.env.DIRECT_DATABASE_URL?.trim()) {
+    failures.push("DIRECT_DATABASE_URL is required when an Admin schema phase is enabled");
+  } else if (!/[?&]sslmode=verify-full(?:&|$)/.test(process.env.DIRECT_DATABASE_URL)) {
+    failures.push("DIRECT_DATABASE_URL must use sslmode=verify-full");
+  }
+
+}
+
+if (process.env.ADMIN_CLIENT_DELIVERY_PHASE4_ENABLED === "true" && process.env.ADMIN_GALLERY_PHASE2_ENABLED !== "true") {
+  failures.push("ADMIN_CLIENT_DELIVERY_PHASE4_ENABLED requires ADMIN_GALLERY_PHASE2_ENABLED=true");
+}
+
+if (process.env.ADMIN_PHASE6_RELEASE_ENABLED === "true") {
+  for (const dependency of ["ADMIN_GALLERY_PHASE2_ENABLED", "ADMIN_CONTENT_PHASE3_ENABLED", "ADMIN_CLIENT_DELIVERY_PHASE4_ENABLED"]) {
+    if (process.env[dependency] !== "true") failures.push(`ADMIN_PHASE6_RELEASE_ENABLED requires ${dependency}=true`);
+  }
+  for (const evidence of ["PHASE6_MIGRATION_REPORT_REFERENCE", "PHASE6_DELIVERY_REPORT_REFERENCE", "PHASE6_STORAGE_REPORT_REFERENCE", "PHASE6_OBSERVATION_ENDS_AT"]) {
+    if (!process.env[evidence]?.trim()) failures.push(`${evidence} is required when Phase 6 is enabled`);
+  }
+  if (process.env.PHASE6_IOS_SAVE_VERIFIED !== "true" || process.env.PHASE6_ANDROID_SAVE_VERIFIED !== "true") {
+    failures.push("Phase 6 requires verified iOS and Android full-quality save evidence");
+  }
+  if (!Number.isFinite(Date.parse(process.env.PHASE6_OBSERVATION_ENDS_AT ?? ""))) {
+    failures.push("PHASE6_OBSERVATION_ENDS_AT must be an ISO-8601 timestamp");
+  }
+}
+
+const stepUpMaxAgeSeconds = Number(process.env.ADMIN_STEP_UP_MAX_AGE_SECONDS);
+if (!Number.isInteger(stepUpMaxAgeSeconds) || stepUpMaxAgeSeconds < 60 || stepUpMaxAgeSeconds > 1800) {
+  failures.push("ADMIN_STEP_UP_MAX_AGE_SECONDS must be an integer from 60 to 1800");
+}
+
+const deliveryLogRetentionDays = Number(process.env.DELIVERY_LOG_RETENTION_DAYS);
+if (!Number.isInteger(deliveryLogRetentionDays) || deliveryLogRetentionDays < 30 || deliveryLogRetentionDays > 3650) {
+  failures.push("DELIVERY_LOG_RETENTION_DAYS must be an integer from 30 to 3650");
+}
+
+if (process.env.ADMIN_GALLERY_PHASE2_ENABLED === "true") {
+  const recycleRetentionDays = Number(process.env.GALLERY_RECYCLE_RETENTION_DAYS);
+  if (!Number.isInteger(recycleRetentionDays) || recycleRetentionDays < 1 || recycleRetentionDays > 365) {
+    failures.push("GALLERY_RECYCLE_RETENTION_DAYS must be an integer from 1 to 365");
+  }
 }
 
 for (const name of ["NEXT_PUBLIC_SITE_URL", "ADMIN_PANEL_BASE_URL", "R2_PUBLIC_BASE_URL", "OBSERVABILITY_WEBHOOK_URL"]) {

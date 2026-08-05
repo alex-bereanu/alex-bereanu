@@ -1,37 +1,45 @@
 ﻿import Image from "next/image";
 import Link from "next/link";
+import type { Metadata } from "next";
 
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { PhotoResourceHints } from "@/components/photo-resource-hints";
 import { env } from "@/config/env";
-import { headerCategoryLinks, portfolioCategories } from "@/lib/site-data";
+import { portfolioCategories } from "@/lib/site-data";
 import { getPublicPortfolioCategorySummaries } from "@/server/services/public-gallery";
-import { getSiteContent } from "@/server/services/site-content";
+import { buildSiteContentMetadata, getPublicSiteChromeContent, getSiteContent } from "@/server/services/site-content";
 
 // Keep the route request-rendered so builds never depend on production database
 // availability or migration state. Its underlying public data is still cached.
 export const dynamic = "force-dynamic";
 
+export async function generateMetadata(): Promise<Metadata> {
+  const content = await getSiteContent("portfolio.index");
+  return buildSiteContentMetadata(content, "/portfolio");
+}
+
 const IMAGE_QUALITY = 75;
 
 export default async function PortfolioPage() {
-  const [categories, content] = await Promise.all([
+  const [categories, content, chrome] = await Promise.all([
     getPublicPortfolioCategorySummaries(portfolioCategories),
     getSiteContent("portfolio.index"),
+    getPublicSiteChromeContent(),
   ]);
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-10 sm:px-6 lg:px-8">
       <PhotoResourceHints publicImageOrigin={env.R2_PUBLIC_BASE_URL ? new URL(env.R2_PUBLIC_BASE_URL).origin : undefined} />
       <SiteHeader
+        brandName={chrome.brandName}
         className="rounded p-4 backdrop-blur"
-        links={[{ href: "/", label: "Home" }, ...headerCategoryLinks]}
+        links={[{ href: "/", label: chrome.labels.home }, ...chrome.categoryLinks]}
       />
 
       <header className="space-y-2">
         <h1 className="editorial-heading text-5xl">{content.title}</h1>
-        <p className="max-w-3xl text-sm text-neutral-700">{content.body}</p>
+        <p className="max-w-3xl whitespace-pre-wrap text-sm text-neutral-700">{content.body}</p>
       </header>
 
       {!env.R2_PUBLIC_BASE_URL ? (
@@ -68,13 +76,13 @@ export default async function PortfolioPage() {
 
             <div className="space-y-2 p-4">
               <h2 className="editorial-heading text-2xl">{category.title}</h2>
-              <p className="text-sm text-neutral-700">{category.description}</p>
+              <p className="whitespace-pre-wrap text-sm text-neutral-700">{category.description}</p>
             </div>
           </Link>
         ))}
       </section>
 
-      <SiteFooter links={[{ href: "/", label: "Home" }]} />
+      <SiteFooter links={[{ href: "/", label: chrome.labels.home }]} />
     </main>
   );
 }

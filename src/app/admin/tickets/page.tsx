@@ -1,6 +1,6 @@
 import { Prisma, TicketStatus } from "@/generated/prisma/client";
 
-import { AdminAlerts, AdminFooter, AdminNav } from "@/app/admin/_components/admin-chrome";
+import { AdminAlerts, AdminShell } from "@/app/admin/_components/admin-chrome";
 import { resolveTicketStatusFilter } from "@/app/admin/_lib/admin-options";
 import { env } from "@/config/env";
 import { prisma } from "@/lib/db";
@@ -25,13 +25,11 @@ export default async function AdminTicketsPage({ searchParams }: AdminTicketsPag
 
   if (!env.DATABASE_URL) {
     return (
-      <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-10">
-        <h1 className="text-3xl font-semibold">Tickets</h1>
+      <AdminShell active="tickets" title="Client tickets" csrfToken={csrfToken}>
         <p className="rounded border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
           DATABASE_URL is not configured. Set it in <code>.env.local</code> to enable ticket management.
         </p>
-        <AdminFooter csrfToken={csrfToken} />
-      </main>
+      </AdminShell>
     );
   }
 
@@ -66,17 +64,7 @@ export default async function AdminTicketsPage({ searchParams }: AdminTicketsPag
   });
 
   return (
-    <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-10 sm:px-6 lg:px-8">
-      <header className="space-y-4">
-        <div className="space-y-2">
-          <p className="text-xs font-medium uppercase text-neutral-500">Admin</p>
-          <h1 className="text-3xl font-semibold">Tickets</h1>
-          <p className="text-sm text-neutral-700">
-            Review booking and contact requests, update their status, and send replies from one focused queue.
-          </p>
-        </div>
-        <AdminNav active="tickets" />
-      </header>
+    <AdminShell active="tickets" title="Client tickets" description="Review booking and contact requests, update their status, and send replies from one focused queue." csrfToken={csrfToken}>
 
       <AdminAlerts error={resolvedSearchParams.error} notice={resolvedSearchParams.notice} />
 
@@ -182,7 +170,6 @@ export default async function AdminTicketsPage({ searchParams }: AdminTicketsPag
         </section>
       )}
 
-      <AdminFooter csrfToken={csrfToken} />
-    </main>
+    </AdminShell>
   );
 }

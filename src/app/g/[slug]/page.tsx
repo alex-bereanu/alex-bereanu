@@ -3,11 +3,14 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { GalleryLightbox } from "@/components/gallery-lightbox";
+import { ClientPhotoActions } from "@/components/client-photo-actions";
 import { SiteFooter } from "@/components/site-footer";
 import { TurnstileField } from "@/components/turnstile-field";
 import { env } from "@/config/env";
 import { createCsrfToken } from "@/server/security/request-protection";
 import { getPrivateGalleryPageAccess } from "@/server/services/gallery-access";
+import { isAdminClientDeliveryPhase4Enabled } from "@/server/services/admin-client-delivery-phase4";
+import { getPublishedSiteContentDocument } from "@/server/services/site-content";
 
 type CustomGalleryPageProps = {
   params: Promise<{ slug: string }>;
@@ -57,7 +60,7 @@ export default async function CustomGalleryPage({ params, searchParams }: Custom
     );
   }
 
-  const access = await getPrivateGalleryPageAccess(capabilityToken);
+  const [access, clientContent] = await Promise.all([getPrivateGalleryPageAccess(capabilityToken), getPublishedSiteContentDocument("client.gallery")]);
 
   if (!access) {
     notFound();
@@ -109,7 +112,8 @@ export default async function CustomGalleryPage({ params, searchParams }: Custom
 
   const downloadsRemaining =
     access.maxDownloads === null ? null : Math.max(access.maxDownloads - access.downloadCount, 0);
-  const canDownload = downloadsRemaining === null || downloadsRemaining > 0;
+  const phase4 = isAdminClientDeliveryPhase4Enabled();
+  const canDownload = phase4 || downloadsRemaining === null || downloadsRemaining > 0;
   const photos = access.gallery.assets.flatMap((asset) => {
     if (!asset.smallStorageKey) {
       return [];
@@ -142,26 +146,37 @@ export default async function CustomGalleryPage({ params, searchParams }: Custom
       largeWidth: largeDimensions.width,
       largeHeight: largeDimensions.height,
       placeholderDataUrl: asset.placeholderDataUrl ?? undefined,
-      alt: asset.originalFilename,
+      alt: asset.altText?.trim() || asset.originalFilename,
       downloadHref: `/api/galleries/${capabilityToken}/assets/${asset.id}/download`,
+      downloadFilename: asset.originalFilename,
     }];
   });
 
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-10 sm:px-6 lg:px-8">
+    <main className="private-client-gallery mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-10 sm:px-6 lg:px-8">
       <nav className="flex items-center justify-between">
         <Link className="header-link" href="/portfolio">
           Back to portfolio
         </Link>
-        <p className="text-xs text-neutral-600">Private client gallery</p>
+        <p className="text-xs text-neutral-600">{clientContent.values.title}</p>
       </nav>
 
       <header className="space-y-2">
         <h1 className="editorial-heading text-5xl">{access.gallery.title}</h1>
-        {access.gallery.description ? <p className="text-sm text-neutral-700">{access.gallery.description}</p> : null}
+        {access.gallery.description ? <p className="whitespace-pre-wrap text-sm text-neutral-700">{access.gallery.description}</p> : null}
+        {clientContent.values.body ? <p className="whitespace-pre-wrap text-sm text-neutral-600">{clientContent.values.body}</p> : null}
       </header>
 
-      <section className="flex flex-wrap gap-3">
+      {phase4 ? <section className="client-gallery-guide" aria-labelledby="client-save-guide">
+        <div>
+          <p className="editorial-kicker">Full-quality delivery</p>
+          <h2 id="client-save-guide" className="editorial-heading text-3xl">{clientContent.values.subtitle}</h2>
+        </div>
+        <div className="client-gallery-guide-copy">
+          <p className="whitespace-pre-wrap">{clientContent.values.ctaBody}</p>
+          <p>On supported phones, Share photo opens the system share sheet so you can choose Save Image or Photos. Save full quality remains available on every device.</p>
+        </div>
+      </section> : <section className="flex flex-wrap gap-3">
         {access.gallery.archiveObjectKey ? (
           canDownload ? (
             <a className="editorial-button rounded px-4 py-2" href={`/api/galleries/${capabilityToken}/archive-download`}>
@@ -173,7 +188,7 @@ export default async function CustomGalleryPage({ params, searchParams }: Custom
         ) : (
           <span className="rounded bg-neutral-100 px-4 py-2 text-sm text-neutral-600">ZIP archive not uploaded yet</span>
         )}
-      </section>
+      </section>}
 
       {photos.length === 0 && access.gallery.assets.length > 0 ? (
         <p className="rounded bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -190,18 +205,18 @@ export default async function CustomGalleryPage({ params, searchParams }: Custom
         totalCount={access.gallery.assetCount}
       />
 
-      <section className="space-y-2">
-        <h2 className="editorial-kicker text-neutral-700">Original downloads</h2>
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div><p className="editorial-kicker text-neutral-700">Original files</p><h2 className="editorial-heading text-3xl">Save one photo at a time</h2></div>
+          {phase4 ? <p className="max-w-md text-xs leading-5 text-neutral-600">Every completed full-file transfer is recorded once per secure link and photo. Retries do not consume an arbitrary request allowance.</p> : null}
+        </div>
+        <div className="client-original-list">
           {canDownload ? (
             access.gallery.assets.map((asset) => (
-              <a
-                key={asset.id}
-                className="editorial-card flex min-h-11 items-center rounded px-3 py-2 text-xs transition hover:-translate-y-0.5"
-                href={`/api/galleries/${capabilityToken}/assets/${asset.id}/download`}
-              >
-                {asset.originalFilename}
-              </a>
+              phase4 ? <article key={asset.id} className="client-original-row">
+                <div className="min-w-0"><p className="truncate text-sm font-medium">{asset.originalFilename}</p><p className="mt-1 text-xs text-neutral-500">Verified private original</p></div>
+                <ClientPhotoActions downloadHref={`/api/galleries/${capabilityToken}/assets/${asset.id}/download`} filename={asset.originalFilename} />
+              </article> : <a key={asset.id} className="editorial-card flex min-h-11 items-center rounded px-3 py-2 text-xs transition hover:-translate-y-0.5" href={`/api/galleries/${capabilityToken}/assets/${asset.id}/download`}>{asset.originalFilename}</a>
             ))
           ) : (
             <p className="text-sm text-neutral-600">Download limit reached for this gallery link.</p>

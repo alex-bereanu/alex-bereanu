@@ -6,8 +6,8 @@ import { PhotoResourceHints } from "@/components/photo-resource-hints";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { env } from "@/config/env";
-import { headerCategoryLinks } from "@/lib/site-data";
 import { getPublicGalleryBySlug } from "@/server/services/public-gallery";
+import { getPublicSiteChromeContent } from "@/server/services/site-content";
 
 type PublicGalleryPageProps = {
   params: Promise<{ slug: string }>;
@@ -33,7 +33,7 @@ export async function generateMetadata({ params }: PublicGalleryPageProps): Prom
 
 export default async function PublicGalleryPage({ params }: PublicGalleryPageProps) {
   const { slug } = await params;
-  const gallery = await getPublicGalleryBySlug(slug);
+  const [gallery, chrome] = await Promise.all([getPublicGalleryBySlug(slug), getPublicSiteChromeContent()]);
 
   if (!gallery) {
     notFound();
@@ -45,10 +45,11 @@ export default async function PublicGalleryPage({ params }: PublicGalleryPagePro
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-12 px-4 py-8 sm:px-6 lg:px-8">
       <PhotoResourceHints publicImageOrigin={env.R2_PUBLIC_BASE_URL ? new URL(env.R2_PUBLIC_BASE_URL).origin : undefined} />
       <SiteHeader
+        brandName={chrome.brandName}
         className="rounded p-4 backdrop-blur"
         links={[
-          { href: "/", label: "Home" },
-          ...headerCategoryLinks,
+          { href: "/", label: chrome.labels.home },
+          ...chrome.categoryLinks,
           { href: `/portfolio/${gallery.categorySlug}`, label: `Back to ${gallery.categoryTitle}` },
         ]}
       />
@@ -57,7 +58,7 @@ export default async function PublicGalleryPage({ params }: PublicGalleryPagePro
         <section className="mx-auto w-full max-w-4xl space-y-3 text-center">
           <p className="editorial-kicker text-neutral-600">{gallery.categoryTitle}</p>
           <h1 className="editorial-heading text-5xl leading-tight">{gallery.title}</h1>
-          {gallery.description ? <p className="text-sm text-neutral-700">{gallery.description}</p> : null}
+          {gallery.description ? <p className="whitespace-pre-wrap text-sm text-neutral-700">{gallery.description}</p> : null}
         </section>
 
         {missingPublicBase ? (
@@ -78,7 +79,7 @@ export default async function PublicGalleryPage({ params }: PublicGalleryPagePro
 
       <SiteFooter
         links={[
-          { href: "/", label: "Home" },
+          { href: "/", label: chrome.labels.home },
           { href: `/portfolio/${gallery.categorySlug}`, label: gallery.categoryTitle },
         ]}
       />

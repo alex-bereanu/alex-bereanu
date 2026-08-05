@@ -42,7 +42,8 @@ export async function GET(request: Request): Promise<NextResponse> {
       largeWidth: large.width,
       largeHeight: large.height,
       placeholderDataUrl: asset.placeholderDataUrl ?? undefined,
-      alt: asset.originalFilename,
+      alt: asset.altText?.trim() || asset.originalFilename,
+      downloadFilename: asset.originalFilename,
     }];
   });
 

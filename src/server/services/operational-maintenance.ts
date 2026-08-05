@@ -5,6 +5,8 @@ import { prisma } from "@/lib/db";
 import { emitOperationalEvent } from "@/server/observability/events";
 import { reconcileExpiredUploadSessions } from "@/server/services/media-upload-sessions";
 import { retryPendingStorageDeletions } from "@/server/services/storage-deletions";
+import { purgeExpiredGalleryAssets } from "@/server/services/gallery-recycle-bin";
+import { isAdminClientDeliveryPhase4Enabled } from "@/server/services/admin-client-delivery-phase4";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -18,6 +20,7 @@ export async function runOperationalMaintenance(): Promise<Record<string, number
   const staleRateLimitCutoff = cutoff(1);
 
   const reconciledUploads = await reconcileExpiredUploadSessions(200);
+  const purgedGalleryAssets = await purgeExpiredGalleryAssets(50);
   const retriedDeletions = await retryPendingStorageDeletions(100);
 
   const [
@@ -53,18 +56,35 @@ export async function runOperationalMaintenance(): Promise<Record<string, number
       : prisma.ticket.deleteMany({ where: { id: { in: [] } } }),
   ]);
 
-  const [failedMediaJobs, pendingDeletionJobs, pendingUploads] = await Promise.all([
+  const oldDeliveryLogs = isAdminClientDeliveryPhase4Enabled() && env.DELIVERY_LOG_RETENTION_DAYS
+    ? await prisma.galleryAssetDelivery.deleteMany({
+        where: { lastDeliveredAt: { lt: cutoff(env.DELIVERY_LOG_RETENTION_DAYS) } },
+      })
+    : { count: 0 };
+
+  const [failedMediaJobs, pendingDeletionJobs, pendingUploads, oldestPendingMediaJob] = await Promise.all([
     prisma.mediaProcessingJob.count({ where: { status: "FAILED" } }),
     prisma.storageDeletionJob.count({ where: { status: "PENDING" } }),
     prisma.mediaUploadSession.count({ where: { status: { in: ["CREATED", "UPLOADED"] } } }),
+    prisma.mediaProcessingJob.findFirst({
+      where: { status: { in: ["PENDING", "PROCESSING", "RETRY"] } },
+      orderBy: { createdAt: "asc" },
+      select: { createdAt: true },
+    }),
   ]);
+
+  const oldestPendingMediaJobAgeSeconds = oldestPendingMediaJob
+    ? Math.max(0, Math.floor((Date.now() - oldestPendingMediaJob.createdAt.getTime()) / 1000))
+    : 0;
 
   const result = {
     reconciledUploads,
+    purgedGalleryAssets,
     retriedDeletions,
     expiredRateLimits: expiredRateLimits.count,
     expiredSessions: expiredSessions.count,
     oldAuditEvents: oldAuditEvents.count,
+    oldDeliveryLogs: oldDeliveryLogs.count,
     completedMediaJobs: completedMediaJobs.count,
     completedDeletionJobs: completedDeletionJobs.count,
     oldEmailLogs: oldEmailLogs.count,
@@ -72,6 +92,7 @@ export async function runOperationalMaintenance(): Promise<Record<string, number
     failedMediaJobs,
     pendingDeletionJobs,
     pendingUploads,
+    oldestPendingMediaJobAgeSeconds,
   };
 
   await emitOperationalEvent({

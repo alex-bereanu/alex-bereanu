@@ -12,6 +12,7 @@ export type SiteHeaderLink = {
 type SiteHeaderProps = {
   links: readonly SiteHeaderLink[];
   className?: string;
+  brandName?: string;
 };
 
 function MenuIcon({ open }: { open: boolean }) {
@@ -44,7 +45,7 @@ function HeaderLink({ href, label, onNavigate }: SiteHeaderLink & { onNavigate?:
   );
 }
 
-export function SiteHeader({ links, className = "" }: SiteHeaderProps) {
+export function SiteHeader({ links, className = "", brandName = "Alex Bereanu" }: SiteHeaderProps) {
   const [isOpen, setIsOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement | null>(null);
   const drawerRef = useRef<HTMLDivElement | null>(null);
@@ -106,8 +107,8 @@ export function SiteHeader({ links, className = "" }: SiteHeaderProps) {
   return (
     <header className={`site-header ${className}`.trim()}>
       <div className="site-header-inner">
-        <Link aria-label="Alex Bereanu home" className="header-brand" href="/">
-          Alex Bereanu
+        <Link aria-label={`${brandName} home`} className="header-brand" href="/">
+          {brandName}
         </Link>
 
         <nav aria-label="Primary navigation" className="header-nav header-nav-desktop">

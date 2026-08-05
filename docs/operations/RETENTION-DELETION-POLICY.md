@@ -20,6 +20,7 @@
 | Private originals, derivatives, ZIP archives | Contract/project period plus the client-approved delivery window | Manual gallery/asset deletion only; revoke sessions/shares immediately and enqueue every object | Removed from normal backups at expiry; historic backups age out under the backup schedule |
 | Quarantine uploads and incomplete multipart sessions | 24 hours for photos; 7 days for archives | Automated expiry reconciliation, multipart abort, and storage-deletion outbox | None beyond provider recovery/versioning window |
 | Gallery share links and access grants | Until expiry or revocation | Revoke immediately; retain minimal database record only while needed for security investigation | Database backup tail |
+| Per-photo delivery records | 365 days after the latest completed full-file transfer | `DELIVERY_LOG_RETENTION_DAYS=365`; applies only after Phase 4 activation and never deletes photo objects | Database backup tail |
 | Contact/booking tickets | Recommended 730 days, subject to owner/legal approval | `TICKET_RETENTION_DAYS`; leave unset until approved | Database backup tail |
 | Application email logs | 90 days | `EMAIL_LOG_RETENTION_DAYS=90` | Email provider must be configured to an equal or shorter operational retention where supported |
 | Email-provider message copies | Provider minimum needed for delivery diagnostics, target no more than 30 days | Configure in provider account and document exceptions | Provider-controlled; verify contract/DPA |
@@ -53,4 +54,3 @@ Authenticate the requester through an agreed channel, identify all galleries/tic
 - Provider lifecycle screenshots or exported configuration.
 - Backup retention and most recent restore-drill record.
 - Exception owner, reason, approval date, and expiry date.
-

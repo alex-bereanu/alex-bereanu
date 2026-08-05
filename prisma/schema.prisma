@@ -22,6 +22,24 @@ enum GalleryVisibility {
   PRIVATE
 }
 
+enum GalleryStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum GalleryDeliveryMethod {
+  DOWNLOAD
+  SHARE
+  ORIGINAL_VIEW
+}
+
+enum SiteContentRevisionStatus {
+  DRAFT
+  PUBLISHED
+  SUPERSEDED
+}
+
 enum TicketType {
   BOOKING
   CONTACT
@@ -129,6 +147,8 @@ model Gallery {
   description          String?
   category             GalleryCategory
   visibility           GalleryVisibility @default(PUBLIC)
+  status               GalleryStatus     @default(PUBLISHED)
+  clientDeliveryEnabled Boolean           @default(false)
   isActive             Boolean           @default(true)
   archiveObjectKey     String?
   archiveStorageArea   StorageArea       @default(PRIVATE)
@@ -143,9 +163,11 @@ model Gallery {
 
   assets         GalleryAsset[]
   shareLinks     GalleryShareLink[]
+  deliveries    GalleryAssetDelivery[]
   uploadSessions MediaUploadSession[]
 
   @@index([category, isActive])
+  @@index([category, status, visibility])
 }
 
 model GalleryAsset {
@@ -179,15 +201,25 @@ model GalleryAsset {
   width              Int?
   height             Int?
   capturedAt         DateTime?
+  altText            String?
+  caption            String?
+  focalX             Float?
+  focalY             Float?
+  deletedAt          DateTime?
+  purgeAfter         DateTime?
+  deletedByActorHash String?
   sortOrder          Int         @default(0)
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
 
   gallery        Gallery              @relation(fields: [galleryId], references: [id], onDelete: Cascade)
   processingJobs MediaProcessingJob[]
+  deliveries     GalleryAssetDelivery[]
 
   @@index([galleryId, sortOrder])
   @@index([galleryId, status, sortOrder])
+  @@index([galleryId, deletedAt, sortOrder])
+  @@index([deletedAt, purgeAfter])
 }
 
 model MediaUploadSession {
@@ -254,13 +286,41 @@ model GalleryShareLink {
   downloadCount  Int       @default(0)
   isActive       Boolean   @default(true)
   revokedAt      DateTime?
+  replacedAt     DateTime?
+  replacedById   String?
   lastAccessedAt DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  gallery Gallery @relation(fields: [galleryId], references: [id], onDelete: Cascade)
+  gallery      Gallery                @relation(fields: [galleryId], references: [id], onDelete: Cascade)
+  replacement  GalleryShareLink?      @relation("GalleryShareReplacement", fields: [replacedById], references: [id], onDelete: SetNull)
+  replaces     GalleryShareLink[]     @relation("GalleryShareReplacement")
+  deliveries  GalleryAssetDelivery[]
 
   @@index([galleryId, isActive])
+  @@index([galleryId, replacedAt])
+}
+
+model GalleryAssetDelivery {
+  id                String                @id @default(cuid())
+  galleryId         String
+  assetId           String
+  shareLinkId       String
+  method            GalleryDeliveryMethod
+  sourceContentHash String?
+  sourceSizeBytes   BigInt
+  firstDeliveredAt  DateTime              @default(now())
+  lastDeliveredAt   DateTime              @default(now())
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  gallery   Gallery          @relation(fields: [galleryId], references: [id], onDelete: Cascade)
+  asset     GalleryAsset     @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  shareLink GalleryShareLink @relation(fields: [shareLinkId], references: [id], onDelete: Cascade)
+
+  @@unique([shareLinkId, assetId])
+  @@index([galleryId, lastDeliveredAt])
+  @@index([assetId, lastDeliveredAt])
 }
 
 model StorageDeletionJob {
@@ -377,6 +437,47 @@ model SiteContent {
   imageMediumHeight    Int?
   imageMediumSizeBytes BigInt?
   imageAlt             String?
+  imageFocalX          Float?
+  imageFocalY          Float?
+  seoTitle             String?
+  seoDescription       String?
+  publishedPayload     Json?
+  publishedRevisionId  String?
+  publishedAt          DateTime?
+  publishedByActorHash String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
+
+  revisions SiteContentRevision[]
+}
+
+model SiteContentRevision {
+  id                    String                    @id @default(cuid())
+  contentKey            String
+  version               Int
+  status                SiteContentRevisionStatus @default(DRAFT)
+  payload               Json
+  imageObjectKey        String?
+  imageSmallObjectKey   String?
+  imageSmallWidth       Int?
+  imageSmallHeight      Int?
+  imageSmallSizeBytes   BigInt?
+  imageMediumObjectKey  String?
+  imageMediumWidth      Int?
+  imageMediumHeight     Int?
+  imageMediumSizeBytes  BigInt?
+  imageStorageArea      StorageArea?
+  imageAlt              String?
+  imageFocalX           Float?
+  imageFocalY           Float?
+  restoredFromRevisionId String?
+  createdByActorHash    String?
+  publishedAt           DateTime?
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+
+  content SiteContent @relation(fields: [contentKey], references: [key], onDelete: Cascade)
+
+  @@unique([contentKey, version])
+  @@index([contentKey, status, updatedAt])
 }

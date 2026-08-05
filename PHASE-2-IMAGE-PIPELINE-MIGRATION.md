@@ -4,7 +4,7 @@
 **Implementation date:** 31 July 2026  
 **Repository:** `E:\github\alex-bereanu`  
 **Local implementation status:** Complete  
-**Production data/storage mutation:** Not performed
+**Production data/storage mutation:** In progress against the configured Neon database and R2 buckets
 
 > **Subsequent update (31 July 2026):** Phase 3 has now been implemented locally and is recorded in `PHASE-3-PERFORMANCE-MIGRATION.md`. The production migration and live integration gates below remain unchanged.
 
@@ -18,13 +18,17 @@
 
 > looks good, continue with the rest of migration
 
+> images displayed in the grid have low quality, what do you suggest we can do to display them at a much better quality?
+
+> sounds good, let's implement the recommended approach
+
 ## Executive result
 
-Phase 2 is implemented in the local worktree. Gallery images and archives now enter a server-owned upload session, land in quarantine, and remain unavailable until a durable processing job validates and publishes them. Images receive versioned 480px, 1280px, and 2560px WebP derivatives plus a compact placeholder. Preview metadata is stripped, pixel and dimension limits are enforced, and publication is fail-closed behind the `READY` state.
+Phase 2 is implemented in the local worktree. Gallery images and archives now enter a server-owned upload session, land in quarantine, and remain unavailable until a durable processing job validates and publishes them. Images receive cache-versioned v2 derivatives at 800px/quality 82, 1440px/quality 84, and 2560px/quality 86 plus a compact placeholder. Preview metadata is stripped, pixel and dimension limits are enforced, and publication is fail-closed behind the `READY` state.
 
 Source originals and gallery ZIP files are now retained in private storage even when a gallery is public. Only verified responsive derivatives for a public gallery are copied to the public bucket. Private-gallery derivatives continue to use authenticated same-origin delivery and never fall back to originals.
 
-No database migration was applied, no R2 object was copied or deleted, and no backfill was executed. Those production-facing actions remain a deliberate deployment checkpoint.
+The checked-in database migrations are applied to the configured Neon database. A dedicated private R2 bucket holds verified source originals, and the controlled v2 derivative rebuild is in progress after a successful 10-photo quality sample.
 
 ## Implemented ingestion flow
 
@@ -43,11 +47,11 @@ No database migration was applied, no R2 object was copied or deleted, and no ba
 - File signatures must agree with declared JPG, PNG, WebP, GIF, or AVIF types.
 - Sharp uses strict warning handling and an 80-megapixel input ceiling.
 - Images over 20,000 pixels on either dimension, malformed decodes, and animated/multi-page inputs are rejected.
-- Responsive WebP derivatives are generated at maximum dimensions of 480px, 1280px, and 2560px.
+- Responsive WebP derivatives are generated at maximum dimensions of 800px, 1440px, and 2560px with WebP quality levels 82, 84, and 86 respectively.
 - A 24px WebP data placeholder is stored with the asset.
 - Preview EXIF and other source metadata are not copied into generated derivatives.
 - Variant generation within one job is sequential to limit peak memory; worker batch concurrency remains bounded.
-- Object keys are versioned with the verified content hash, enabling immutable public caching and idempotent rebuilding.
+- Object keys include the verified content hash, explicit `v2` recipe version, maximum dimension, and quality. This enables immutable public caching, immediate cache busting for the quality migration, and idempotent rebuilding.
 - Source originals are uploaded to the private bucket under `sources/galleries/...`, including originals belonging to public galleries.
 
 ## Archive safeguards
@@ -64,8 +68,8 @@ The scanner is an external dependency and is intentionally not implemented insid
 
 - Public and private gallery queries include only `READY` assets.
 - Archives are downloadable only when their archive state is `READY`.
-- Public grids use the 480px derivative and never use a source original as a fallback.
-- Mobile lightboxes use the 1280px derivative; desktop lightboxes prefer the 2560px derivative.
+- Public and authenticated grids expose native `srcset` candidates backed by the 800px and 1440px derivatives, so viewport width and device pixel ratio determine the delivered resolution without enabling the Next.js runtime optimizer.
+- Mobile lightboxes use the 1440px derivative; desktop lightboxes prefer the 2560px derivative.
 - Private delivery supports authenticated `small`, `medium`, and `large` variants.
 - Exactly one initial gallery/mosaic image is eager and high priority; the remaining images use normal lazy loading.
 - Browser upload hashing is chunked and reports progress for images and archives.
@@ -81,7 +85,7 @@ The scanner is an external dependency and is intentionally not implemented insid
 - `vercel.json` schedules a small worker batch every five minutes. The deployment platform and plan must support that schedule; otherwise invoke the same endpoint from an approved external scheduler.
 - Expired abandoned upload sessions are reconciled into the storage-deletion outbox.
 - Asset, archive, and gallery deletion now includes large variants, private source originals, legacy storage locations, and outstanding quarantine objects.
-- The backfill command is dry-run by default and only queues durable rebuild jobs when `--execute` is explicitly supplied.
+- The backfill command is dry-run by default and only queues durable rebuild jobs when `--execute` is explicitly supplied. `--rebuild-ready` selects READY v1 assets while excluding assets already on v2.
 - Active rebuild jobs are deduplicated.
 
 ## Database migration
@@ -113,7 +117,8 @@ The Phase 1 baseline warning still applies: if production was created with `pris
 | Production build | Pass | `npm run build` using Next.js 16.2.12 |
 | Git whitespace check | Pass | `git diff --check` |
 | Production dependency audit | Conditional hold | Two linked high findings: Next's nested Sharp 0.34.5; no available npm fix |
-| Live migration/integration test | Not performed | No approved staging or production database/R2 mutation in this task |
+| Live migration/integration test | Pass | 1,076/1,076 assets READY on v2; zero active jobs |
+| Database/R2 reconciliation | Pass | 3,228 public derivatives; 1,076 private originals; zero legacy derivatives or pending deletions |
 | Malware scanner integration test | Not performed | External scanner endpoint and synthetic test archive are required |
 
 The static Phase 2 regression gate checks quarantine ownership, durable jobs, strict image limits, private source storage, archive scanning, `READY`-only delivery, deletion coverage, and controlled backfill behavior. It does not replace a live end-to-end test against staging Postgres and R2.
@@ -169,3 +174,19 @@ The Phase 2 media migration is complete in code, but later audit phases remain s
 - `.env.example`
 
 The original audit remains in `WEBSITE-PERFORMANCE-MOBILE-SECURITY-AUDIT.md`, and the preceding checkpoint remains in `PHASE-1-SECURITY-CHECKPOINT.md`.
+
+## Live migration and v2 quality rebuild — 2026-07-31
+
+- The four checked-in Prisma migrations are applied to the configured Neon database and `prisma migrate status` reports the schema as up to date.
+- A dedicated `prod-data-portfolio-alexbereanu-private` R2 bucket holds verified source originals. It has no configured `r2.dev` hostname or public custom-domain route.
+- The local environment explicitly maps `R2_PUBLIC_BUCKET_NAME` to the public derivative bucket and `R2_PRIVATE_BUCKET_NAME` to the private source bucket.
+- The migration covered 1,076 legacy assets across 12 active public galleries.
+- A controlled 10-photo v2 sample completed with zero failures. Browser inspection at device pixel ratio 1.5 confirmed native responsive candidate selection and visibly clean grid rendering before the full queue was released.
+- The remaining 1,066 jobs were drained with three bounded workers. Individual Sharp pipelines remained sequential. Five image attempts entered the durable retry path and recovered; two HTTP claim requests encountered transient Neon `P2028` transaction-start timeouts and retried before claiming work. No terminal job failed.
+- Final database verification reports 1,076 assets, 1,076 `READY`, 1,076 on v2, zero active jobs, and 1,336 completed job records. The higher job count includes the deliberate second rebuild of the 260 assets completed under v1.
+- Final paginated R2 reconciliation reports exactly 3,228 public derivatives and 1,076 private source originals. There are zero missing expected objects, zero legacy v1 derivative objects, zero private-gallery derivative objects in this all-public dataset, and zero pending deletion jobs.
+- Final homepage browser verification found 30 loaded photos, all 30 using v2 URLs, 40 responsive `<source>` elements, and zero broken images. The admin route continued to enforce authentication and redirected the clean test session to `Admin sign in`.
+- The temporary local worker credential was removed immediately after completion. A replay using the removed credential returned `404`.
+- `npm run lint`, `npm run typecheck`, `npm run quality:verify`, `npm run build`, `npm run images:verify:v2 -- --require-complete`, and `npm run images:verify:storage` all pass.
+
+The v2 gallery image-quality migration is complete for every current asset. Original-image fallback remains prohibited, source originals remain private, and the Next.js runtime image optimizer remains disabled until its tracked nested Sharp dependency finding is resolved.

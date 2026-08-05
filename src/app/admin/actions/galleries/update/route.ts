@@ -8,6 +8,9 @@ import { toSlug } from "@/lib/slug";
 import { requireAdminRequestSession } from "@/server/auth/admin-guard";
 import { verifyMutationProtection } from "@/server/security/request-protection";
 import { invalidatePublicGalleryCache } from "@/server/services/public-cache";
+import { isAdminGalleryPhase2Enabled } from "@/server/services/admin-gallery-phase2";
+import { recordSecurityAuditEvent } from "@/server/security/audit";
+import { getClientIp } from "@/server/security/rate-limit";
 
 const updateGallerySchema = z.object({
   id: z.string().trim().min(1),
@@ -19,8 +22,9 @@ const updateGallerySchema = z.object({
   isActive: z.boolean(),
 });
 
-function redirectToAdmin(request: Request, query: string): NextResponse {
-  const url = new URL(`/admin/galleries?view=expanded&${query}`, request.url);
+function redirectToGallery(request: Request, galleryId: string | undefined, query: string): NextResponse {
+  const path = galleryId ? `/admin/galleries/${galleryId}?tab=details&${query}` : `/admin/galleries?${query}`;
+  const url = new URL(path, request.url);
   return NextResponse.redirect(url, 303);
 }
 
@@ -31,10 +35,11 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   if (!env.DATABASE_URL) {
-    return redirectToAdmin(request, "error=database_not_configured");
+    return redirectToGallery(request, undefined, "error=database_not_configured");
   }
 
   try {
+    const phase2 = isAdminGalleryPhase2Enabled();
     const formData = await request.formData();
     const securityError = verifyMutationProtection(request, String(formData.get("csrfToken") ?? ""));
 
@@ -69,7 +74,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     });
 
     if (!currentGallery) {
-      return redirectToAdmin(request, "error=gallery_not_found");
+      return redirectToGallery(request, parsed.id, "error=gallery_not_found");
     }
 
     const visibilityChanges = currentGallery.visibility !== parsed.visibility;
@@ -78,7 +83,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       visibilityChanges &&
       (currentGallery._count.assets > 0 || currentGallery.archiveObjectKey || currentGallery.uploadSessions.length > 0)
     ) {
-      return redirectToAdmin(request, "error=gallery_visibility_storage_migration_required");
+      return redirectToGallery(request, parsed.id, "error=gallery_visibility_storage_migration_required");
     }
 
     await prisma.$transaction(async (transaction) => {
@@ -90,8 +95,9 @@ export async function POST(request: Request): Promise<NextResponse> {
           description: parsed.description,
           category: parsed.category,
           visibility: parsed.visibility,
-          isActive: parsed.isActive,
+          ...(phase2 ? {} : { isActive: parsed.isActive }),
         },
+        select: { id: true },
       });
 
       if (parsed.visibility !== "PRIVATE") {
@@ -107,12 +113,13 @@ export async function POST(request: Request): Promise<NextResponse> {
     });
 
     invalidatePublicGalleryCache();
-    return redirectToAdmin(request, "notice=gallery_updated");
+    await recordSecurityAuditEvent({ eventType: "gallery.details.update", outcome: "SUCCESS", clientIp: getClientIp(request), resourceType: "gallery", resourceId: parsed.id, metadata: { category: parsed.category, visibility: parsed.visibility } });
+    return redirectToGallery(request, parsed.id, "notice=gallery_updated");
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return redirectToAdmin(request, "error=invalid_gallery_payload");
+      return redirectToGallery(request, undefined, "error=invalid_gallery_payload");
     }
 
-    return redirectToAdmin(request, "error=gallery_update_failed");
+    return redirectToGallery(request, undefined, "error=gallery_update_failed");
   }
 }

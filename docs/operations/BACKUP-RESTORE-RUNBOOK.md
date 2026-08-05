@@ -26,6 +26,14 @@ Protect gallery metadata, access-control state, processing/deletion queues, and 
 9. Measure actual recovery point and elapsed recovery time. Record gaps, owners, and deadlines.
 10. Destroy the isolated restored environment and confirm deletion through both providers.
 
+Before a schema migration, keep the isolated restore online long enough to run
+`npm run admin:phase0:checkpoint`. Supply the Phase 0 operator variables through
+the staging process environment or an ignored `.env.phase0.local` file, using
+`.env.example` as the inventory. The verifier connects to both
+database endpoints with `sslmode=verify-full`, confirms TLS, and compares row
+counts plus non-reversible identity digests for the security-critical tables.
+It prints no connection strings, record identifiers, or personal content.
+
 ## Production restoration
 
 - Require two-person approval when another authorized operator exists; otherwise document explicit owner approval.
@@ -39,3 +47,14 @@ Protect gallery metadata, access-control state, processing/deletion queues, and 
 
 If integrity, authorization, or deletion reconciliation fails, keep the restored service inaccessible, preserve logs, revert traffic to the last known-safe environment, and escalate under the incident-response runbook. A successful database query alone is not a successful restore.
 
+For the Admin Phase 6 release, run the additive migration only through
+`npm run admin:phase6:migrate -- --apply`. The runner repeats the Phase 0
+checkpoint, requires an explicit one-time approval, keeps all Admin flags off,
+and validates backfills after `prisma migrate deploy`. Save the resulting
+privacy-minimized report in the approved change record.
+
+During the Phase 6 observation window, prefer flag and deployment rollback over
+schema reversal: disable Phase 6, then Phases 4, 3, and 2 in that order if
+needed. Preserve the encrypted pre-migration database backup and corresponding
+storage recovery versions until `PHASE6_OBSERVATION_ENDS_AT`. Never delete
+migration history or run an improvised down migration.

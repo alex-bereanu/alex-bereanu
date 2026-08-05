@@ -1,13 +1,11 @@
 import type { Metadata } from "next";
 
 import { CategoryLandingPage } from "@/components/category-landing-page";
+import { buildSiteContentMetadata, getSiteContent } from "@/server/services/site-content";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: "Portrait Photography",
-  description: "Portrait galleries and connect requests for Alex Bereanu Photography.",
-};
+export async function generateMetadata(): Promise<Metadata> { return buildSiteContentMetadata(await getSiteContent("portfolio.portraits"), "/portfolio/portraits"); }
 
 export default async function PortraitsPage() {
   return (

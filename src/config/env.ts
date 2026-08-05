@@ -20,6 +20,14 @@ const optionalUnitInterval = z.preprocess(
   z.coerce.number().min(0).max(1).optional(),
 );
 
+const optionalBoolean = z.preprocess(
+  (value) => {
+    if (typeof value !== "string" || value.trim() === "") return undefined;
+    return value.trim().toLowerCase() === "true" ? true : value.trim().toLowerCase() === "false" ? false : value;
+  },
+  z.boolean().optional(),
+);
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   NEXT_PUBLIC_SITE_NAME: z.string().optional(),
@@ -28,7 +36,14 @@ const envSchema = z.object({
   WEDDINGS_DOMAIN: z.string().optional(),
   ADMIN_PANEL_BASE_URL: z.string().url().optional(),
   DATABASE_URL: z.string().optional(),
+  DIRECT_DATABASE_URL: z.string().optional(),
+  ADMIN_GALLERY_PHASE2_ENABLED: optionalBoolean,
+  GALLERY_RECYCLE_RETENTION_DAYS: optionalPositiveInteger,
+  ADMIN_CONTENT_PHASE3_ENABLED: optionalBoolean,
+  ADMIN_CLIENT_DELIVERY_PHASE4_ENABLED: optionalBoolean,
+  ADMIN_PHASE6_RELEASE_ENABLED: optionalBoolean,
   ADMIN_AUTH_MODE: optionalAdminAuthMode,
+  ADMIN_STEP_UP_MAX_AGE_SECONDS: optionalPositiveInteger,
   ADMIN_SETUP_TOKEN: optionalSecret,
   OAUTH_STATE_SECRET: optionalSecret,
   GALLERY_ACCESS_SECRET: optionalSecret,
@@ -69,6 +84,7 @@ const envSchema = z.object({
   OBSERVABILITY_WEBHOOK_SECRET: optionalSecret,
   WEB_VITALS_SAMPLE_RATE: optionalUnitInterval,
   AUDIT_RETENTION_DAYS: optionalPositiveInteger,
+  DELIVERY_LOG_RETENTION_DAYS: optionalPositiveInteger,
   EMAIL_LOG_RETENTION_DAYS: optionalPositiveInteger,
   TICKET_RETENTION_DAYS: optionalPositiveInteger,
   VERCEL: z.literal("1").optional(),

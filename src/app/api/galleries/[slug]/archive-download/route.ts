@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { createSignedDownloadUrl } from "@/server/services/storage";
+import { isAdminClientDeliveryPhase4Enabled } from "@/server/services/admin-client-delivery-phase4";
+import { isAdminPhase6ReleaseEnabled } from "@/server/services/admin-phase6-release";
 import {
   galleryCapabilityMatchesAccess,
   recordGalleryShareLinkDownload,
@@ -12,6 +14,9 @@ type RouteProps = {
 };
 
 export async function GET(_: Request, { params }: RouteProps): Promise<NextResponse> {
+  if (isAdminClientDeliveryPhase4Enabled() || isAdminPhase6ReleaseEnabled()) {
+    return NextResponse.json({ error: "Archive delivery is retired." }, { status: 404 });
+  }
   const { slug } = await params;
   const access = await resolveGalleryAccessFromCookie();
 

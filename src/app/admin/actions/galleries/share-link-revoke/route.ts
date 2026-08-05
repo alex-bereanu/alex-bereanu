@@ -13,8 +13,9 @@ const revokeSchema = z.object({
   shareLinkId: z.string().trim().min(1),
 });
 
-function redirectToAdmin(request: Request, query: string): NextResponse {
-  return NextResponse.redirect(new URL(`/admin/galleries?view=expanded&${query}`, request.url), 303);
+function redirectToGallery(request: Request, galleryId: string | undefined, query: string): NextResponse {
+  const path = galleryId ? `/admin/galleries/${galleryId}?tab=client-access&${query}` : `/admin/galleries?${query}`;
+  return NextResponse.redirect(new URL(path, request.url), 303);
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -24,7 +25,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   if (!env.DATABASE_URL) {
-    return redirectToAdmin(request, "error=database_not_configured");
+    return redirectToGallery(request, undefined, "error=database_not_configured");
   }
 
   try {
@@ -62,13 +63,15 @@ export async function POST(request: Request): Promise<NextResponse> {
       metadata: { gallery_id: parsed.galleryId },
     });
 
-    return redirectToAdmin(
+    return redirectToGallery(
       request,
+      parsed.galleryId,
       result.count > 0 ? "notice=share_link_revoked" : "error=share_link_not_found",
     );
   } catch (error) {
-    return redirectToAdmin(
+    return redirectToGallery(
       request,
+      undefined,
       error instanceof z.ZodError ? "error=invalid_share_link_payload" : "error=share_link_revoke_failed",
     );
   }

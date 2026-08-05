@@ -57,7 +57,7 @@ includesAll(bookingForm, ["<label", 'type="tel"', 'inputMode="numeric"', 'role="
 includesAll(lightbox, ["isMobile", "closeOnPullDown", "useReducedMotion", "hidden: isMobile"], "mobile lightbox");
 includesAll(publicMosaic, ["returnFocusRef", "requestAnimationFrame"], "public lightbox focus return");
 includesAll(galleryGrid, ["returnFocusRef", "requestAnimationFrame"], "private lightbox focus return");
-includesAll(assetManager, ["Move Up", "Move Down", "Alt plus Arrow Up", "Delete Permanently"], "admin touch and keyboard controls");
+includesAll(assetManager, [">Earlier</button>", ">Later</button>", "event.altKey", 'event.key !== "ArrowUp"', "Delete permanently", "Move to Bin"], "admin touch and keyboard controls");
 includesAll(assetUpload, ["MAX_PARALLEL_PHOTO_UPLOADS", "withUploadRetries", "beforeunload", "Pause Uploads", "HEIC/HEIF", "findUploadCheckpoint"], "resumable photo upload");
 includesAll(archiveUpload, ["MAX_PARALLEL_MULTIPART_PARTS", "multipart/part-url", "multipart/complete", "Pause Upload", "Cancel & Discard Parts", "findUploadCheckpoint"], "resumable archive upload");
 includesAll(checkpoint, ["CHECKPOINT_VERSION", "CHECKPOINT_MAX_AGE_MS", "runBounded", "uploadBlobWithProgress", "MAX_UPLOAD_RETRIES"], "browser upload checkpointing");

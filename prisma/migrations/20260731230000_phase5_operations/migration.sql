@@ -3,7 +3,9 @@
 
 BEGIN;
 
-CREATE TABLE "RateLimitBucket" (
+-- RateLimitBucket existed in the legacy pre-Prisma-Migrate schema. Keep this
+-- migration deployable both there and on a fresh database.
+CREATE TABLE IF NOT EXISTS "RateLimitBucket" (
     "key" TEXT NOT NULL,
     "count" INTEGER NOT NULL,
     "resetAt" TIMESTAMP(3) NOT NULL,
@@ -26,7 +28,7 @@ CREATE TABLE "SecurityAuditEvent" (
     CONSTRAINT "SecurityAuditEvent_pkey" PRIMARY KEY ("id")
 );
 
-CREATE INDEX "RateLimitBucket_resetAt_idx" ON "RateLimitBucket"("resetAt");
+CREATE INDEX IF NOT EXISTS "RateLimitBucket_resetAt_idx" ON "RateLimitBucket"("resetAt");
 CREATE INDEX "SecurityAuditEvent_eventType_createdAt_idx" ON "SecurityAuditEvent"("eventType", "createdAt");
 CREATE INDEX "SecurityAuditEvent_resourceType_resourceId_createdAt_idx" ON "SecurityAuditEvent"("resourceType", "resourceId", "createdAt");
 CREATE INDEX "SecurityAuditEvent_createdAt_idx" ON "SecurityAuditEvent"("createdAt");

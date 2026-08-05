@@ -14,6 +14,7 @@ import {
   createAdminSessionToken,
   getAdminSessionCookieName,
   getAdminSessionMaxAgeSeconds,
+  revokeAdminSessionToken,
 } from "@/server/auth/admin-session";
 import { getSecureCookieOptions } from "@/server/auth/cookies";
 import { recordSecurityAuditEvent } from "@/server/security/audit";
@@ -95,6 +96,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       `google:${googleProfile.subject}:${googleProfile.email}`,
       "google",
     );
+    await revokeAdminSessionToken(request.cookies.get(getAdminSessionCookieName())?.value);
     const response = NextResponse.redirect(new URL(verifiedState.nextPath, request.url));
 
     response.cookies.set({
@@ -113,7 +115,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       outcome: "SUCCESS",
       actor: `google:${googleProfile.subject}:${googleProfile.email}`,
       clientIp,
-      metadata: { provider: "google" },
+      metadata: { provider: "google", step_up: verifiedState.stepUp },
     });
 
     return response;

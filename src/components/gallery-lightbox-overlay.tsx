@@ -27,6 +27,7 @@ export type LightboxPhoto = {
   placeholderDataUrl?: string;
   alt: string;
   downloadHref?: string;
+  downloadFilename?: string;
 };
 
 export function GalleryLightboxOverlay({
@@ -56,7 +57,7 @@ export function GalleryLightboxOverlay({
       : photo.largeHeight ?? photo.mediumHeight ?? photo.height,
     alt: photo.alt,
     thumbnail: photo.smallSrc ?? photo.src,
-    download: photo.downloadHref ? { url: photo.downloadHref, filename: photo.alt } : undefined,
+    download: photo.downloadHref ? { url: photo.downloadHref, filename: photo.downloadFilename ?? photo.alt } : undefined,
   }));
 
   return (

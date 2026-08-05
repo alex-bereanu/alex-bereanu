@@ -13,6 +13,7 @@ import {
 } from "@/server/auth/gallery-access";
 import { getSecureCookieOptions } from "@/server/auth/cookies";
 import { recordSecurityAuditEvent } from "@/server/security/audit";
+import { isAdminGalleryPhase2Enabled } from "@/server/services/admin-gallery-phase2";
 import { sanitizeSameOriginPath, verifyMutationProtection } from "@/server/security/request-protection";
 import { buildRateLimitKey, checkRateLimit, getClientIp, rateLimitRedirectResponse } from "@/server/security/rate-limit";
 import { verifyTurnstileToken } from "@/server/security/turnstile";
@@ -89,7 +90,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         tokenHash: hashGalleryCapabilityToken(parsed.slug),
         isActive: true,
         gallery: {
-          isActive: true,
+          ...(isAdminGalleryPhase2Enabled() ? { status: "PUBLISHED" as const } : { isActive: true }),
           visibility: "PRIVATE",
         },
       },

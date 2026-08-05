@@ -7,6 +7,7 @@ import { prisma } from "@/lib/db";
 import { portfolioCategories, type PortfolioCategory } from "@/lib/site-data";
 import { PUBLIC_GALLERY_CACHE_TAG } from "@/server/services/public-cache";
 import { getPortfolioContentKey, getSiteContents } from "@/server/services/site-content";
+import { isAdminGalleryPhase2Enabled } from "@/server/services/admin-gallery-phase2";
 
 const DEFAULT_WIDTH = 4;
 const DEFAULT_HEIGHT = 3;
@@ -31,6 +32,7 @@ const galleryPhotoAssetSelect = {
   placeholderDataUrl: true,
   width: true,
   height: true,
+  ...(isAdminGalleryPhase2Enabled() ? { altText: true as const } : {}),
 } satisfies Prisma.GalleryAssetSelect;
 
 type GalleryPhotoAsset = Prisma.GalleryAssetGetPayload<{ select: typeof galleryPhotoAssetSelect }>;
@@ -96,12 +98,10 @@ export type PublicGalleryDetail = PublicCategoryGallery & {
 };
 
 const categorySlugToEnum: Record<PortfolioCategorySlug, GalleryCategory> = {
+  weddings: GalleryCategory.WEDDINGS,
   portraits: GalleryCategory.PORTRAITS,
   automotive: GalleryCategory.AUTOMOTIVE,
   landscapes: GalleryCategory.LANDSCAPES,
-  weddings: GalleryCategory.WEDDINGS,
-  product: GalleryCategory.PRODUCT,
-  corporate: GalleryCategory.CORPORATE,
 };
 
 const categoryEnumToSlug: Record<GalleryCategory, PortfolioCategorySlug | null> = {
@@ -109,8 +109,8 @@ const categoryEnumToSlug: Record<GalleryCategory, PortfolioCategorySlug | null> 
   [GalleryCategory.AUTOMOTIVE]: "automotive",
   [GalleryCategory.LANDSCAPES]: "landscapes",
   [GalleryCategory.WEDDINGS]: "weddings",
-  [GalleryCategory.PRODUCT]: "product",
-  [GalleryCategory.CORPORATE]: "corporate",
+  [GalleryCategory.PRODUCT]: null,
+  [GalleryCategory.CORPORATE]: null,
   [GalleryCategory.CUSTOM]: null,
 };
 
@@ -167,8 +167,18 @@ export function buildGalleryPhotoFromAsset(
 }
 
 function mapAssetToPhoto(asset: GalleryPhotoAsset, galleryTitle: string): GalleryPhoto | null {
-  return buildGalleryPhotoFromAsset(asset, `${galleryTitle} - ${asset.originalFilename}`);
+  return buildGalleryPhotoFromAsset(asset, asset.altText?.trim() || `${galleryTitle} - ${asset.originalFilename}`);
 }
+
+const availableAssetWhere: Prisma.GalleryAssetWhereInput = {
+  status: "READY",
+  ...(isAdminGalleryPhase2Enabled() ? { deletedAt: null } : {}),
+};
+
+const publishedPublicGalleryWhere: Prisma.GalleryWhereInput = {
+  visibility: "PUBLIC",
+  ...(isAdminGalleryPhase2Enabled() ? { status: "PUBLISHED" } : { isActive: true }),
+};
 
 function toPage(assets: GalleryPhotoAsset[], galleryTitle: string): GalleryAssetPage {
   const pageAssets = assets.slice(0, GALLERY_ASSET_PAGE_SIZE);
@@ -186,7 +196,7 @@ const getCachedCategoryGalleries = unstable_cache(
     const category = categorySlugToEnum[slug];
     const [galleries, showcaseAssets] = await Promise.all([
       prisma.gallery.findMany({
-        where: { category, isActive: true, visibility: "PUBLIC" },
+        where: { category, ...publishedPublicGalleryWhere },
         orderBy: [{ updatedAt: "desc" }],
         take: 24,
         select: {
@@ -194,9 +204,9 @@ const getCachedCategoryGalleries = unstable_cache(
           slug: true,
           title: true,
           description: true,
-          _count: { select: { assets: { where: { status: "READY" } } } },
+          _count: { select: { assets: { where: availableAssetWhere } } },
           assets: {
-            where: { status: "READY" },
+            where: availableAssetWhere,
             orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
             take: 1,
             select: galleryPhotoAssetSelect,
@@ -205,8 +215,8 @@ const getCachedCategoryGalleries = unstable_cache(
       }),
       prisma.galleryAsset.findMany({
         where: {
-          status: "READY",
-          gallery: { category, isActive: true, visibility: "PUBLIC" },
+          ...availableAssetWhere,
+          gallery: { category, ...publishedPublicGalleryWhere },
         },
         orderBy: [{ createdAt: "desc" }, { id: "asc" }],
         take: GALLERY_ASSET_PAGE_SIZE,
@@ -251,16 +261,16 @@ export async function getPublicCategoryGalleriesBySlug(slug: PortfolioCategorySl
 const getCachedPublicGalleryBySlug = unstable_cache(
   async (slug: string): Promise<PublicGalleryDetail | null> => {
     const gallery = await prisma.gallery.findFirst({
-      where: { slug, isActive: true, visibility: "PUBLIC" },
+      where: { slug, ...publishedPublicGalleryWhere },
       select: {
         id: true,
         slug: true,
         title: true,
         description: true,
         category: true,
-        _count: { select: { assets: { where: { status: "READY" } } } },
+        _count: { select: { assets: { where: availableAssetWhere } } },
         assets: {
-          where: { status: "READY" },
+          where: availableAssetWhere,
           orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
           take: GALLERY_ASSET_PAGE_SIZE + 1,
           select: galleryPhotoAssetSelect,
@@ -297,7 +307,7 @@ export const getPublicGalleryBySlug = cache(async (slug: string): Promise<Public
 const getCachedPublicGalleryAssetPage = unstable_cache(
   async (slug: string, cursor: string): Promise<GalleryAssetPage> => {
     const gallery = await prisma.gallery.findFirst({
-      where: { slug, isActive: true, visibility: "PUBLIC" },
+      where: { slug, ...publishedPublicGalleryWhere },
       select: { title: true },
     });
 
@@ -305,8 +315,8 @@ const getCachedPublicGalleryAssetPage = unstable_cache(
 
     const assets = await prisma.galleryAsset.findMany({
       where: {
-        status: "READY",
-        gallery: { slug, isActive: true, visibility: "PUBLIC" },
+        ...availableAssetWhere,
+        gallery: { slug, ...publishedPublicGalleryWhere },
       },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
       cursor: { id: cursor },
@@ -335,7 +345,20 @@ type SummaryCountRow = {
 
 const getCachedPortfolioSummaryRows = unstable_cache(
   async (): Promise<{ counts: SummaryCountRow[]; covers: Array<GalleryPhotoAsset & { gallery: { title: string } }> }> => {
-    const counts = await prisma.$queryRaw<SummaryCountRow[]>`
+    const counts = isAdminGalleryPhase2Enabled()
+      ? await prisma.$queryRaw<SummaryCountRow[]>`
+      SELECT
+        gallery."category" AS "category",
+        COUNT(DISTINCT gallery."id")::int AS "galleryCount",
+        COUNT(asset."id")::int AS "assetCount",
+        (ARRAY_AGG(asset."id" ORDER BY asset."createdAt" DESC) FILTER (WHERE asset."id" IS NOT NULL))[1] AS "coverAssetId"
+      FROM "Gallery" AS gallery
+      LEFT JOIN "GalleryAsset" AS asset
+        ON asset."galleryId" = gallery."id" AND asset."status" = 'READY' AND asset."deletedAt" IS NULL
+      WHERE gallery."status" = 'PUBLISHED' AND gallery."visibility" = 'PUBLIC'
+      GROUP BY gallery."category"
+    `
+      : await prisma.$queryRaw<SummaryCountRow[]>`
       SELECT
         gallery."category" AS "category",
         COUNT(DISTINCT gallery."id")::int AS "galleryCount",
@@ -350,7 +373,7 @@ const getCachedPortfolioSummaryRows = unstable_cache(
     const coverIds = counts.flatMap((row) => (row.coverAssetId ? [row.coverAssetId] : []));
     const covers = coverIds.length
       ? await prisma.galleryAsset.findMany({
-          where: { id: { in: coverIds }, status: "READY" },
+          where: { id: { in: coverIds }, ...availableAssetWhere },
           select: { ...galleryPhotoAssetSelect, gallery: { select: { title: true } } },
         })
       : [];
@@ -411,7 +434,7 @@ const getCachedHomepageMosaicPool = unstable_cache(
   async (): Promise<HomepageMosaicPhoto[]> => {
     const getForCategory = async (category: GalleryCategory, take: number) =>
       prisma.galleryAsset.findMany({
-        where: { status: "READY", gallery: { category, isActive: true, visibility: "PUBLIC" } },
+        where: { ...availableAssetWhere, gallery: { category, ...publishedPublicGalleryWhere } },
         orderBy: [{ createdAt: "desc" }, { id: "asc" }],
         take,
         select: { ...galleryPhotoAssetSelect, gallery: { select: { category: true, title: true } } },

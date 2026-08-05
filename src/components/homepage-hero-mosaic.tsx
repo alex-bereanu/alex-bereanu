@@ -1,14 +1,11 @@
-import Image from "next/image";
-import Link from "next/link";
-
 import type { HomepageMosaicPhoto } from "@/server/services/public-gallery";
+
+import { PublicGalleryMosaic } from "./public-gallery-mosaic";
 
 const DESKTOP_COLUMN_COUNT = 5;
 const MAX_GRID_ROWS = 8;
 const MAX_GRID_PHOTO_COUNT = DESKTOP_COLUMN_COUNT * MAX_GRID_ROWS;
 const INITIAL_VISIBLE_COUNT = DESKTOP_COLUMN_COUNT * 2;
-const EAGER_IMAGE_COUNT = 1;
-const IMAGE_QUALITY = 75;
 const WEDDING_CATEGORY_SLUG = "weddings";
 const PORTRAIT_CATEGORY_SLUG = "portraits";
 const PLACES_CATEGORY_SLUG = "landscapes";
@@ -90,31 +87,15 @@ export function HomepageHeroMosaic({ photos }: HomepageHeroMosaicProps) {
 
   return (
     <section id="hero" className="w-full bg-white px-0">
-      <div className="grid w-full grid-cols-2 overflow-hidden sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-        {gridPhotos.length > 0
-          ? gridPhotos.map((photo, index) => (
-              <Link
-                key={`${photo.id}-${index}`}
-                href={`/portfolio/${photo.categorySlug}`}
-                className="relative block aspect-[4/5] overflow-hidden bg-neutral-100"
-                aria-label={`Open ${photo.categoryTitle} portfolio`}
-              >
-                <Image
-                  src={photo.src}
-                  alt={photo.alt}
-                  fill
-                  sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
-                  className="object-cover"
-                  quality={IMAGE_QUALITY}
-                  loading={index < EAGER_IMAGE_COUNT ? "eager" : "lazy"}
-                  fetchPriority={index === 0 ? "high" : "auto"}
-                />
-              </Link>
-            ))
-          : Array.from({ length: INITIAL_VISIBLE_COUNT }).map((_, index) => (
-              <div key={index} className="aspect-[4/5] bg-[linear-gradient(135deg,#fafafa,#d4d4d4)]" />
+      {gridPhotos.length > 0 ? (
+        <PublicGalleryMosaic photos={gridPhotos} />
+      ) : (
+        <div className="grid w-full grid-cols-2 overflow-hidden sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          {Array.from({ length: INITIAL_VISIBLE_COUNT }).map((_, index) => (
+            <div key={index} className="aspect-[4/5] bg-[linear-gradient(135deg,#fafafa,#d4d4d4)]" />
           ))}
-      </div>
+        </div>
+      )}
     </section>
   );
 }

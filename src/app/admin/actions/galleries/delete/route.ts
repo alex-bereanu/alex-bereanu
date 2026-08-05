@@ -3,7 +3,9 @@ import { z } from "zod";
 
 import { env } from "@/config/env";
 import { prisma } from "@/lib/db";
-import { requireAdminRequestSession } from "@/server/auth/admin-guard";
+import { requireRecentAdminRequestSession } from "@/server/auth/admin-guard";
+import { recordSecurityAuditEvent } from "@/server/security/audit";
+import { getClientIp } from "@/server/security/rate-limit";
 import { verifyMutationProtection } from "@/server/security/request-protection";
 import { getStorageAreaForGalleryVisibility } from "@/server/services/storage";
 import { invalidatePublicGalleryCache } from "@/server/services/public-cache";
@@ -23,10 +25,9 @@ function redirectToAdmin(request: Request, query: string): NextResponse {
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
-  const authRedirect = await requireAdminRequestSession(request);
-  if (authRedirect) {
-    return authRedirect;
-  }
+  const auth = await requireRecentAdminRequestSession(request);
+  if (auth.response) return auth.response;
+  const clientIp = getClientIp(request);
 
   if (!env.DATABASE_URL) {
     return redirectToAdmin(request, "error=database_not_configured");
@@ -98,16 +99,27 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     await prisma.$transaction(async (transaction) => {
       await enqueueStorageDeletions(transaction, deletionTargets);
-      await transaction.gallery.delete({ where: { id: parsed.id } });
+      await transaction.gallery.delete({ where: { id: parsed.id }, select: { id: true } });
     });
     await attemptStorageDeletions(deletionTargets);
     invalidatePublicGalleryCache();
+    await recordSecurityAuditEvent({
+      eventType: "gallery.delete",
+      outcome: "SUCCESS",
+      actor: auth.session.subject,
+      clientIp,
+      resourceType: "gallery",
+      resourceId: parsed.id,
+      metadata: { storage_targets: deletionTargets.length },
+    });
     return redirectToAdmin(request, "notice=gallery_deleted");
   } catch (error) {
     if (error instanceof z.ZodError) {
+      await recordSecurityAuditEvent({ eventType: "gallery.delete", outcome: "DENIED", actor: auth.session.subject, clientIp, metadata: { reason: "invalid_payload" } });
       return redirectToAdmin(request, "error=invalid_gallery_payload");
     }
 
+    await recordSecurityAuditEvent({ eventType: "gallery.delete", outcome: "ERROR", actor: auth.session.subject, clientIp, metadata: { reason: error instanceof Error ? error.name : "UnknownError" } });
     return redirectToAdmin(request, "error=gallery_delete_failed");
   }
 }

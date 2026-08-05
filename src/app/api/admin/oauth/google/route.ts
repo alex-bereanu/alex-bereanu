@@ -21,6 +21,7 @@ function redirectToAdminLogin(requestUrl: string, error: string, nextPath: strin
 export async function GET(request: Request): Promise<NextResponse> {
   const requestUrl = new URL(request.url);
   const nextPath = sanitizeAdminNextPath(requestUrl.searchParams.get("next"));
+  const stepUp = requestUrl.searchParams.get("stepup") === "1";
 
   if (!isAdminGoogleOAuthConfigured()) {
     return redirectToAdminLogin(request.url, "google_oauth_not_configured", nextPath);
@@ -33,12 +34,14 @@ export async function GET(request: Request): Promise<NextResponse> {
       nonce,
       codeVerifier,
       nextPath,
+      stepUp,
     });
     const authorizationUrl = buildGoogleOAuthAuthorizationUrl({
       requestUrl: request.url,
       state,
       nonce,
       codeChallenge,
+      forceReauthentication: stepUp,
     });
     const response = NextResponse.redirect(authorizationUrl);
 

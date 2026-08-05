@@ -1,10 +1,15 @@
 export type PortfolioCategory = {
-  slug: "portraits" | "automotive" | "landscapes" | "weddings" | "product" | "corporate";
+  slug: "weddings" | "portraits" | "automotive" | "landscapes";
   title: string;
   description: string;
 };
 
 export const portfolioCategories: PortfolioCategory[] = [
+  {
+    slug: "weddings",
+    title: "Weddings",
+    description: "Documentary + editorial wedding coverage with timeless post-processing.",
+  },
   {
     slug: "portraits",
     title: "Portraits",
@@ -19,21 +24,6 @@ export const portfolioCategories: PortfolioCategory[] = [
     slug: "landscapes",
     title: "Places",
     description: "Travel, architecture, nature, and destination photography in print-ready quality.",
-  },
-  {
-    slug: "weddings",
-    title: "Weddings",
-    description: "Documentary + editorial wedding coverage with timeless post-processing.",
-  },
-  {
-    slug: "product",
-    title: "Product",
-    description: "Catalog and campaign product imagery with controlled lighting setups.",
-  },
-  {
-    slug: "corporate",
-    title: "Corporate",
-    description: "Business portraits, events, and brand storytelling for company teams.",
   },
 ];
 

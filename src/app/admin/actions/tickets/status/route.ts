@@ -4,7 +4,9 @@ import { z } from "zod";
 
 import { env } from "@/config/env";
 import { prisma } from "@/lib/db";
-import { requireAdminRequestSession } from "@/server/auth/admin-guard";
+import { requireAdminRequestSessionDetails } from "@/server/auth/admin-guard";
+import { recordSecurityAuditEvent } from "@/server/security/audit";
+import { getClientIp } from "@/server/security/rate-limit";
 import { verifyMutationProtection } from "@/server/security/request-protection";
 
 const statusSchema = z.object({
@@ -18,10 +20,9 @@ function redirectToAdmin(request: Request, query: string): NextResponse {
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
-  const authRedirect = await requireAdminRequestSession(request);
-  if (authRedirect) {
-    return authRedirect;
-  }
+  const auth = await requireAdminRequestSessionDetails(request);
+  if (auth.response) return auth.response;
+  const clientIp = getClientIp(request);
 
   if (!env.DATABASE_URL) {
     return redirectToAdmin(request, "error=database_not_configured");
@@ -46,13 +47,16 @@ export async function POST(request: Request): Promise<NextResponse> {
         status: parsed.status,
       },
     });
+    await recordSecurityAuditEvent({ eventType: "ticket.status.update", outcome: "SUCCESS", actor: auth.session.subject, clientIp, resourceType: "ticket", resourceId: parsed.ticketId, metadata: { status: parsed.status } });
 
     return redirectToAdmin(request, "notice=ticket_status_updated");
   } catch (error) {
     if (error instanceof z.ZodError) {
+      await recordSecurityAuditEvent({ eventType: "ticket.status.update", outcome: "DENIED", actor: auth.session.subject, clientIp, metadata: { reason: "invalid_payload" } });
       return redirectToAdmin(request, "error=invalid_ticket_status_payload");
     }
 
+    await recordSecurityAuditEvent({ eventType: "ticket.status.update", outcome: "ERROR", actor: auth.session.subject, clientIp, metadata: { reason: error instanceof Error ? error.name : "UnknownError" } });
     return redirectToAdmin(request, "error=ticket_status_update_failed");
   }
 }

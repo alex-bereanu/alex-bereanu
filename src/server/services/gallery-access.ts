@@ -4,6 +4,8 @@ import { cookies } from "next/headers";
 
 import { env } from "@/config/env";
 import { prisma } from "@/lib/db";
+import { isAdminGalleryPhase2Enabled } from "@/server/services/admin-gallery-phase2";
+import { isAdminClientDeliveryPhase4Enabled } from "@/server/services/admin-client-delivery-phase4";
 import {
   getGalleryAccessCookieName,
   hashGalleryCapabilityToken,
@@ -25,8 +27,9 @@ const activeShareWhere = {
   isActive: true,
   tokenHash: { not: null },
   gallery: {
-    isActive: true,
     visibility: "PRIVATE" as const,
+    ...(isAdminGalleryPhase2Enabled() ? { status: "PUBLISHED" as const } : { isActive: true }),
+    ...(isAdminClientDeliveryPhase4Enabled() ? { clientDeliveryEnabled: true } : {}),
   },
 };
 const PRIVATE_GALLERY_PAGE_SIZE = 40;
@@ -46,7 +49,13 @@ const privateGalleryAssetSelect = {
   placeholderDataUrl: true,
   width: true,
   height: true,
+  ...(isAdminGalleryPhase2Enabled() ? { altText: true as const } : {}),
 } as const;
+
+const availablePrivateAssetWhere = {
+  status: "READY" as const,
+  ...(isAdminGalleryPhase2Enabled() ? { deletedAt: null } : {}),
+};
 
 async function readGalleryGrant() {
   const token = (await cookies()).get(getGalleryAccessCookieName())?.value;
@@ -82,9 +91,9 @@ export async function getPrivateGalleryPageAccess(capabilityToken: string) {
           description: true,
           archiveObjectKey: true,
           archiveStatus: true,
-          _count: { select: { assets: { where: { status: "READY" } } } },
+          _count: { select: { assets: { where: availablePrivateAssetWhere } } },
           assets: {
-            where: { status: "READY" },
+            where: availablePrivateAssetWhere,
             orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
             take: PRIVATE_GALLERY_PAGE_SIZE + 1,
             select: privateGalleryAssetSelect,
@@ -135,7 +144,7 @@ export async function getPrivateGalleryAssetPage(cursor: string) {
   if (!access) return null;
 
   const assets = await prisma.galleryAsset.findMany({
-    where: { galleryId: access.galleryId, status: "READY" },
+    where: { galleryId: access.galleryId, ...availablePrivateAssetWhere },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
     cursor: { id: cursor },
     skip: 1,

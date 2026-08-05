@@ -77,15 +77,50 @@ function originFromUrl(value: string | undefined): string | null {
   }
 
   try {
-    return new URL(value).origin;
+    const parsed = new URL(value);
+
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return null;
+    }
+
+    return parsed.origin;
   } catch {
     return null;
   }
 }
 
-function getAllowedOrigins(request: Request): Set<string> {
-  const requestOrigin = new URL(request.url).origin;
-  const allowedOrigins = new Set<string>([requestOrigin]);
+function normalizeHost(value: string | null): string | null {
+  const candidate = value?.trim();
+
+  if (!candidate) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(`http://${candidate}`);
+
+    if (parsed.username || parsed.password || parsed.pathname !== "/" || parsed.search || parsed.hash) {
+      return null;
+    }
+
+    return parsed.host;
+  } catch {
+    return null;
+  }
+}
+
+function getRequestHost(request: Request): string | null {
+  const forwardedHostHeader = request.headers.get("x-forwarded-host");
+
+  if (forwardedHostHeader !== null) {
+    return normalizeHost(forwardedHostHeader.split(",", 1)[0] ?? null);
+  }
+
+  return normalizeHost(request.headers.get("host")) ?? new URL(request.url).host;
+}
+
+function getConfiguredOrigins(): Set<string> {
+  const allowedOrigins = new Set<string>();
 
   for (const configuredUrl of [env.NEXT_PUBLIC_SITE_URL, env.NEXT_PUBLIC_WEDDINGS_URL, env.ADMIN_PANEL_BASE_URL]) {
     const origin = originFromUrl(configuredUrl);
@@ -98,18 +133,48 @@ function getAllowedOrigins(request: Request): Set<string> {
   return allowedOrigins;
 }
 
-export function verifySameOriginRequest(request: Request): boolean {
-  const allowedOrigins = getAllowedOrigins(request);
-  const originHeader = request.headers.get("origin");
+function isAllowedOrigin(request: Request, value: string): boolean {
+  const origin = originFromUrl(value);
 
-  if (originHeader) {
-    return allowedOrigins.has(originHeader);
+  if (!origin) {
+    return false;
   }
 
-  const refererOrigin = originFromUrl(request.headers.get("referer") ?? undefined);
+  if (getConfiguredOrigins().has(origin)) {
+    return true;
+  }
 
-  if (refererOrigin) {
-    return allowedOrigins.has(refererOrigin);
+  const requestHost = getRequestHost(request);
+
+  return requestHost !== null && new URL(origin).host === requestHost;
+}
+
+function isConfiguredOrigin(value: string): boolean {
+  const origin = originFromUrl(value);
+
+  return origin !== null && getConfiguredOrigins().has(origin);
+}
+
+export function verifySameOriginRequest(request: Request): boolean {
+  const originHeader = request.headers.get("origin");
+  const referer = request.headers.get("referer");
+  const requestSource = originHeader ?? referer;
+
+  if (requestSource && isConfiguredOrigin(requestSource)) {
+    return true;
+  }
+
+  // Modern browsers provide this forbidden request header themselves, so page
+  // JavaScript cannot forge a same-origin value. Prefer it over host metadata
+  // reconstructed by Next.js or a reverse proxy.
+  const fetchSite = request.headers.get("sec-fetch-site")?.trim().toLowerCase();
+
+  if (fetchSite) {
+    return fetchSite === "same-origin";
+  }
+
+  if (requestSource) {
+    return isAllowedOrigin(request, requestSource);
   }
 
   return env.NODE_ENV !== "production";

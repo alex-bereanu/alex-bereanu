@@ -44,6 +44,8 @@ function getOAuthErrorMessage(error: string | null): string | null {
       return "That Google account is not allowed to access Admin.";
     case "google_oauth_failed":
       return "Google sign in failed. Please try again.";
+    case "step_up_required":
+      return "Sign in again to confirm this irreversible action.";
     default:
       return null;
   }
@@ -72,9 +74,10 @@ export function AdminLoginForm({
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = useMemo(() => getSafeAdminNextPath(searchParams.get("next")), [searchParams]);
+  const stepUp = searchParams.get("stepup") === "1";
   const googleLoginHref = useMemo(
-    () => `/api/admin/oauth/google?${new URLSearchParams({ next: nextPath }).toString()}`,
-    [nextPath],
+    () => `/api/admin/oauth/google?${new URLSearchParams({ next: nextPath, ...(stepUp ? { stepup: "1" } : {}) }).toString()}`,
+    [nextPath, stepUp],
   );
   const oauthErrorMessage = useMemo(() => getOAuthErrorMessage(searchParams.get("error")), [searchParams]);
 
@@ -128,9 +131,9 @@ export function AdminLoginForm({
 
   return (
     <div className="rounded border bg-white p-6">
-      <h1 className="text-2xl font-semibold">Admin sign in</h1>
+      <h1 className="text-2xl font-semibold">{stepUp ? "Confirm Your Identity" : "Admin Sign In"}</h1>
       <p className="mt-2 text-sm text-neutral-700">
-        {googleOAuthEnabled ? "Use your approved Google account to continue." : "Sign in to continue."}
+        {stepUp ? "This irreversible action requires a recent sign-in." : googleOAuthEnabled ? "Use your approved Google account to continue." : "Sign in to continue."}
       </p>
 
       {googleOAuthEnabled && (
@@ -139,7 +142,7 @@ export function AdminLoginForm({
             className="flex min-h-11 items-center justify-center rounded border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-950 transition hover:bg-neutral-50"
             href={googleLoginHref}
           >
-            Continue with Google
+            {stepUp ? "Confirm with Google" : "Continue with Google"}
           </Link>
 
           {passwordLoginEnabled ? (

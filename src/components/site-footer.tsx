@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { getSiteContent } from "@/server/services/site-content";
+import { getPublishedSiteContentDocuments } from "@/server/services/site-content";
 
 type FooterLink = {
   href: string;
@@ -39,21 +39,33 @@ function InstagramIcon() {
 }
 
 export async function SiteFooter({ links }: SiteFooterProps) {
-  const instagramContent = await getSiteContent("social.instagram");
-  const instagramHref = getInstagramHref(instagramContent.body);
+  const [instagramContent, brandContent, footerContent, navigationContent] = await getPublishedSiteContentDocuments(["social.instagram", "global.brand", "global.footer", "global.navigation"]);
+  const instagramHref = getInstagramHref(instagramContent?.values.body ?? "");
+  const brandName = footerContent?.values.title || brandContent?.values.title || "Alex Bereanu";
+  const tagline = footerContent?.values.subtitle || brandContent?.values.subtitle || "The elegance of being there";
+  const navigation = navigationContent?.values ?? {};
+  const labelForHref = (link: FooterLink) => {
+    if (link.href === "/") return navigation.homeLabel || link.label;
+    if (link.href === "/portfolio") return navigation.portfolioLabel || link.label;
+    if (link.href.includes("#contact")) return navigation.connectLabel || link.label;
+    if (link.href.includes("#about")) return navigation.aboutLabel || link.label;
+    if (link.href.includes("#galleries")) return navigation.galleriesLabel || link.label;
+    return link.label;
+  };
 
   return (
     <footer className="site-footer p-6">
       <div className="site-footer-layout">
         <div className="site-footer-brand">
-          <p className="editorial-heading text-2xl">Alex Bereanu</p>
-          <p className="text-sm text-neutral-600">The elegance of being there</p>
+          <p className="editorial-heading text-2xl">{brandName}</p>
+          <p className="text-sm text-neutral-600">{tagline}</p>
+          {footerContent?.values.body ? <p className="max-w-sm whitespace-pre-wrap text-xs text-neutral-500">{footerContent.values.body}</p> : null}
         </div>
 
         <div className="site-footer-social">
           {instagramHref ? (
             <a
-              aria-label="Open Instagram"
+              aria-label={instagramContent?.values.title || "Open Instagram"}
               className="instagram-button"
               href={instagramHref}
               rel="noreferrer"
@@ -72,11 +84,11 @@ export async function SiteFooter({ links }: SiteFooterProps) {
           {links.map((link) =>
             link.href.startsWith("/") ? (
               <Link className="header-link" href={link.href} key={`${link.href}-${link.label}`}>
-                {link.label}
+                {labelForHref(link)}
               </Link>
             ) : (
               <a className="header-link" href={link.href} key={`${link.href}-${link.label}`}>
-                {link.label}
+                {labelForHref(link)}
               </a>
             ),
           )}

@@ -7,6 +7,8 @@ import { prisma } from "@/lib/db";
 import { requireAdminRequestSession } from "@/server/auth/admin-guard";
 import { createGalleryShareCapability } from "@/server/auth/gallery-access";
 import { recordSecurityAuditEvent } from "@/server/security/audit";
+import { isAdminGalleryPhase2Enabled } from "@/server/services/admin-gallery-phase2";
+import { isAdminClientDeliveryPhase4Enabled } from "@/server/services/admin-client-delivery-phase4";
 import { getClientIp } from "@/server/security/rate-limit";
 import { verifyMutationProtection } from "@/server/security/request-protection";
 import { buildShareLinkTemplate } from "@/server/services/email-templates";
@@ -21,6 +23,7 @@ const shareLinkSchema = z.object({
   expiresAt: z.string().optional(),
   maxDownloads: z.number().int().positive().max(10_000).optional(),
   sendEmail: z.boolean(),
+  replacesShareLinkId: z.string().trim().min(1).optional(),
 });
 
 function redirectToAdmin(request: Request, query: string): NextResponse {
@@ -75,13 +78,19 @@ export async function POST(request: Request): Promise<NextResponse> {
             ? Number(payload.maxDownloads)
             : undefined,
       sendEmail: payload.sendEmail === true || payload.sendEmail === "on",
+      replacesShareLinkId:
+        typeof payload.replacesShareLinkId === "string" && payload.replacesShareLinkId.trim()
+          ? payload.replacesShareLinkId.trim()
+          : undefined,
     });
 
+    const phase4 = isAdminClientDeliveryPhase4Enabled();
     const gallery = await prisma.gallery.findFirst({
       where: {
         id: parsed.galleryId,
-        isActive: true,
+        ...(isAdminGalleryPhase2Enabled() ? { status: "PUBLISHED" as const } : { isActive: true }),
         visibility: "PRIVATE",
+        ...(phase4 ? { clientDeliveryEnabled: true } : {}),
       },
       select: {
         id: true,
@@ -91,7 +100,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     if (!gallery) {
       return jsonMode
-        ? NextResponse.json({ error: "Only active private galleries can be shared." }, { status: 400 })
+        ? NextResponse.json({ error: phase4 ? "Enable client delivery for this published private gallery first." : "Only active private galleries can be shared." }, { status: 400 })
         : redirectToAdmin(request, "error=gallery_not_found");
     }
 
@@ -107,20 +116,47 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     const capability = createGalleryShareCapability();
     const passwordHash = parsed.password ? await bcrypt.hash(parsed.password, 12) : undefined;
-    const shareLink = await prisma.galleryShareLink.create({
-      data: {
-        galleryId: gallery.id,
-        slug: capability.internalLabel,
-        tokenHash: capability.tokenHash,
-        passwordHash,
-        recipientEmail: parsed.recipientEmail,
-        expiresAt,
-        maxDownloads: parsed.maxDownloads,
-      },
-      select: {
-        id: true,
-      },
-    });
+    const shareLink = phase4
+      ? await prisma.$transaction(async (transaction) => {
+          const replacement = parsed.replacesShareLinkId
+            ? await transaction.galleryShareLink.findFirst({
+                where: { id: parsed.replacesShareLinkId, galleryId: gallery.id, isActive: true, tokenHash: { not: null } },
+                select: { id: true },
+              })
+            : null;
+          if (parsed.replacesShareLinkId && !replacement) throw new Error("replacement_link_not_found");
+          const created = await transaction.galleryShareLink.create({
+            data: {
+              galleryId: gallery.id,
+              slug: capability.internalLabel,
+              tokenHash: capability.tokenHash,
+              passwordHash,
+              recipientEmail: parsed.recipientEmail,
+              expiresAt,
+            },
+            select: { id: true },
+          });
+          if (replacement) {
+            await transaction.galleryShareLink.update({
+              where: { id: replacement.id },
+              data: { isActive: false, revokedAt: new Date(), replacedAt: new Date(), replacedById: created.id, grantVersion: { increment: 1 } },
+              select: { id: true },
+            });
+          }
+          return created;
+        })
+      : await prisma.galleryShareLink.create({
+          data: {
+            galleryId: gallery.id,
+            slug: capability.internalLabel,
+            tokenHash: capability.tokenHash,
+            passwordHash,
+            recipientEmail: parsed.recipientEmail,
+            expiresAt,
+            maxDownloads: parsed.maxDownloads,
+          },
+          select: { id: true },
+        });
     const origin = env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? new URL(request.url).origin;
     const galleryUrl = `${origin}/g/${capability.token}`;
     let emailStatus: "NOT_REQUESTED" | "SENT" | "SKIPPED" | "FAILED" = "NOT_REQUESTED";
@@ -193,6 +229,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         gallery_id: gallery.id,
         password_protected: Boolean(parsed.password),
         email_status: emailStatus,
+        replaced_link: Boolean(parsed.replacesShareLinkId),
       },
     });
 
@@ -204,6 +241,7 @@ export async function POST(request: Request): Promise<NextResponse> {
           expiresAt: expiresAt.toISOString(),
           emailStatus,
           passwordMustBeSharedSeparately: Boolean(parsed.password && parsed.sendEmail),
+          replacedExistingLink: Boolean(parsed.replacesShareLinkId),
         })
       : redirectToAdmin(request, "notice=share_link_created");
   } catch (error) {

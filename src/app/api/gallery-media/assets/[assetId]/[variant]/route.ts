@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { resolveGalleryAccessFromCookie } from "@/server/services/gallery-access";
 import { getObjectStream } from "@/server/services/storage";
+import { isAdminGalleryPhase2Enabled } from "@/server/services/admin-gallery-phase2";
 
 type RouteProps = {
   params: Promise<{ assetId: string; variant: string }>;
@@ -58,6 +59,7 @@ export async function GET(_: Request, { params }: RouteProps): Promise<Response>
       id: assetId,
       galleryId: access.galleryId,
       status: "READY",
+      ...(isAdminGalleryPhase2Enabled() ? { deletedAt: null } : {}),
     },
     select: {
       smallStorageKey: true,

@@ -10,6 +10,7 @@ import {
   getAdminSessionMaxAgeSeconds,
   isPasswordAdminLoginEnabled,
   isAdminSessionConfigured,
+  revokeAdminSessionToken,
 } from "@/server/auth/admin-session";
 import { getSecureCookieOptions } from "@/server/auth/cookies";
 import { recordSecurityAuditEvent } from "@/server/security/audit";
@@ -114,6 +115,12 @@ export async function POST(request: Request): Promise<NextResponse> {
     }
 
     const token = await createAdminSessionToken(`admin:${adminUser.id}`, "password");
+    const existingToken = request.headers.get("cookie")
+      ?.split(";")
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(`${getAdminSessionCookieName()}=`))
+      ?.slice(getAdminSessionCookieName().length + 1);
+    await revokeAdminSessionToken(existingToken ? decodeURIComponent(existingToken) : null);
     const response = NextResponse.json({ ok: true });
 
     response.cookies.set({

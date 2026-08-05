@@ -15,6 +15,7 @@ export type AdminSession = {
   subject: string;
   provider: string;
   expiresAt: Date;
+  authenticatedAt: Date;
 };
 
 function hashSessionToken(token: string): string {
@@ -100,6 +101,7 @@ export async function verifyAdminSessionToken(token: string): Promise<AdminSessi
         subject: true,
         provider: true,
         expiresAt: true,
+        createdAt: true,
         revokedAt: true,
         lastSeenAt: true,
       },
@@ -132,6 +134,7 @@ export async function verifyAdminSessionToken(token: string): Promise<AdminSessi
       subject: session.subject,
       provider: session.provider,
       expiresAt: session.expiresAt,
+      authenticatedAt: session.createdAt,
     };
   } catch {
     return null;

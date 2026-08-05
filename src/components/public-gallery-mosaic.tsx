@@ -1,10 +1,10 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import Image from "next/image";
 import { useRef, useState } from "react";
 
 import type { LightboxPhoto } from "./gallery-lightbox-overlay";
+import { ResponsiveGalleryImage } from "./responsive-gallery-image";
 
 const GalleryLightboxOverlay = dynamic(
   () => import("./gallery-lightbox-overlay").then((module) => module.GalleryLightboxOverlay),
@@ -23,8 +23,6 @@ type PagePayload = {
   photos?: LightboxPhoto[];
   nextCursor?: string | null;
 };
-
-const IMAGE_QUALITY = 75;
 
 function preloadLightbox(): void {
   void import("./gallery-lightbox-overlay");
@@ -97,15 +95,17 @@ export function PublicGalleryMosaic({
               returnFocusRef.current = event.currentTarget;
               setIndex(photoIndex);
             }}
-            aria-label={`Open ${photo.alt}`}
+            aria-label={`Open ${photo.alt} in gallery`}
           >
-            <Image
-              src={photo.smallSrc ?? photo.src}
+            <ResponsiveGalleryImage
+              smallSrc={photo.smallSrc ?? photo.src}
+              mediumSrc={photo.mediumSrc}
+              smallWidth={photo.smallWidth}
+              mediumWidth={photo.mediumWidth}
               alt={photo.alt}
               fill
               sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
               className="object-cover"
-              quality={IMAGE_QUALITY}
               placeholder={photo.placeholderDataUrl ? "blur" : undefined}
               blurDataURL={photo.placeholderDataUrl}
               loading={photoIndex === 0 ? "eager" : "lazy"}

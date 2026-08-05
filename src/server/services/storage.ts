@@ -54,8 +54,12 @@ type CopyObjectInput = {
 export type StorageObjectStream = {
   body: ReadableStream<Uint8Array>;
   contentLength: number | null;
+  contentRange: string | null;
+  acceptRanges: string | null;
   contentType: string | null;
+  checksumSha256: string | null;
   etag: string | null;
+  metadata: Record<string, string>;
 };
 
 export type StorageObjectMetadata = {
@@ -132,7 +136,10 @@ export function getObjectCacheControl(area: StorageArea): string {
     : "private, no-store, max-age=0";
 }
 
-function buildAttachmentDisposition(filename: string): string {
+export function buildStorageContentDisposition(
+  filename: string,
+  disposition: "attachment" | "inline" = "attachment",
+): string {
   const asciiFilename = filename
     .replace(/[\r\n]/g, "")
     .replace(/["\\]/g, "_")
@@ -142,7 +149,7 @@ function buildAttachmentDisposition(filename: string): string {
     `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
   );
 
-  return `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`;
+  return `${disposition}; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`;
 }
 
 function toWebStream(body: unknown): ReadableStream<Uint8Array> {
@@ -279,7 +286,7 @@ export async function createSignedDownloadUrl(input: SignedDownloadInput): Promi
     Bucket: getBucketName(area),
     Key: input.objectKey,
     ResponseContentDisposition: input.downloadFilename
-      ? buildAttachmentDisposition(input.downloadFilename)
+      ? buildStorageContentDisposition(input.downloadFilename)
       : undefined,
   });
 
@@ -368,17 +375,26 @@ export async function getObjectBuffer(objectKey: string, area: StorageArea = "PU
   return streamToBuffer(response.Body);
 }
 
-export async function getObjectStream(objectKey: string, area: StorageArea): Promise<StorageObjectStream> {
+export async function getObjectStream(
+  objectKey: string,
+  area: StorageArea,
+  options?: { range?: string },
+): Promise<StorageObjectStream> {
   const response = await getClient().send(new GetObjectCommand({
     Bucket: getBucketName(area),
     Key: objectKey,
+    Range: options?.range,
   }));
 
   return {
     body: toWebStream(response.Body),
     contentLength: response.ContentLength ?? null,
+    contentRange: response.ContentRange ?? null,
+    acceptRanges: response.AcceptRanges ?? null,
     contentType: response.ContentType ?? null,
+    checksumSha256: response.ChecksumSHA256 ?? null,
     etag: response.ETag ?? null,
+    metadata: response.Metadata ?? {},
   };
 }
 

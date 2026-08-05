@@ -6,6 +6,9 @@ import { prisma } from "@/lib/db";
 import { requireAdminRequestSession } from "@/server/auth/admin-guard";
 import { verifyMutationProtection } from "@/server/security/request-protection";
 import { invalidatePublicGalleryCache } from "@/server/services/public-cache";
+import { isAdminGalleryPhase2Enabled } from "@/server/services/admin-gallery-phase2";
+import { recordSecurityAuditEvent } from "@/server/security/audit";
+import { getClientIp } from "@/server/security/rate-limit";
 
 const reorderSchema = z.object({
   galleryId: z.string().trim().min(1),
@@ -42,6 +45,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       where: {
         galleryId: parsed.galleryId,
         id: { in: parsed.assetIds },
+        ...(isAdminGalleryPhase2Enabled() ? { deletedAt: null } : {}),
       },
       select: {
         id: true,
@@ -69,6 +73,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       ),
     );
     invalidatePublicGalleryCache();
+    await recordSecurityAuditEvent({ eventType: "gallery.asset.reorder", outcome: "SUCCESS", clientIp: getClientIp(request), resourceType: "gallery", resourceId: parsed.galleryId, metadata: { count: parsed.assetIds.length } });
 
     return NextResponse.json({
       ok: true,

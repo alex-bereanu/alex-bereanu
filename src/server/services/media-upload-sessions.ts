@@ -12,6 +12,7 @@ import {
   RESUMABLE_UPLOAD_SESSION_MAX_AGE_MS,
 } from "@/lib/upload-limits";
 import { sanitizeFilename } from "@/server/security/upload-validation";
+import { isAdminGalleryPhase2Enabled } from "@/server/services/admin-gallery-phase2";
 import {
   abortMultipartUpload,
   completeMultipartUpload,
@@ -61,6 +62,10 @@ export async function createGalleryUploadSession(input: {
 
   if (!gallery) {
     return null;
+  }
+  if (isAdminGalleryPhase2Enabled()) {
+    const lifecycle = await prisma.gallery.findUnique({ where: { id: gallery.id }, select: { status: true } });
+    if (!lifecycle || lifecycle.status === "ARCHIVED") return null;
   }
 
   const sessionId = randomUUID();
@@ -377,6 +382,7 @@ export async function queueUploadedSessions(input: {
       await transaction.gallery.update({
         where: { id: input.galleryId },
         data: { archiveStatus: "PROCESSING", archiveFailureReason: null },
+        select: { id: true },
       });
     }
   });

@@ -32,7 +32,7 @@ const [schema, migration, rateLimit, turnstile, turnstileField, audit, proxy, ma
   ]);
 
 includesAll(schema, ["model RateLimitBucket", "model SecurityAuditEvent", "actorHash", "ipHash"], "Phase 5 schema");
-includesAll(migration, ["CREATE TABLE \"RateLimitBucket\"", "CREATE TABLE \"SecurityAuditEvent\""], "Phase 5 migration");
+includesAll(migration, ['"RateLimitBucket" (', '"SecurityAuditEvent" ('], "Phase 5 migration");
 includesAll(rateLimit, ["x-vercel-forwarded-for", "createHmac", "buildRateLimitKey", 'env.NODE_ENV === "production"'], "distributed rate limiting");
 excludesAll(rateLimit, ["x-forwarded-for", "CREATE TABLE IF NOT EXISTS"], "trusted client-IP handling");
 includesAll(turnstile, ["expectedAction", "expectedHostnames", "result.action", "result.hostname", "AbortSignal.timeout", "idempotency_key"], "Turnstile verification");

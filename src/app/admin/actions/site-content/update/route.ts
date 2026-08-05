@@ -12,7 +12,8 @@ import { deleteObjectByKey } from "@/server/services/storage";
 import { requireAdminRequestSession } from "@/server/auth/admin-guard";
 import { prepareSiteContentImageVariants } from "@/server/services/image-variants";
 import { invalidateSiteContentCache } from "@/server/services/public-cache";
-import { verifyMutationProtection } from "@/server/security/request-protection";
+import { isAdminContentPhase3Enabled } from "@/server/services/admin-content-phase3";
+import { sanitizeSameOriginPath, verifyMutationProtection } from "@/server/security/request-protection";
 import {
   attemptStorageDeletions,
   enqueueStorageDeletions,
@@ -39,10 +40,15 @@ const updateSiteContentSchema = z.object({
   ctaBody: z.string().trim().max(3000).optional(),
   imageAlt: z.string().trim().max(220).optional(),
   clearImage: z.boolean(),
+  returnTo: z.string().trim().max(500).optional(),
 });
 
-function redirectToAdmin(request: Request, query: string): NextResponse {
-  const url = new URL(`/admin?${query}#site-content`, request.url);
+function redirectToEditor(request: Request, query: string, returnTo?: string): NextResponse {
+  const candidate = sanitizeSameOriginPath(returnTo, "/admin/pages", request.url);
+  const safePath = candidate.startsWith("/admin/pages") ? candidate : "/admin/pages";
+  const url = new URL(safePath, request.url);
+  const queryParams = new URLSearchParams(query);
+  queryParams.forEach((value, key) => url.searchParams.set(key, value));
   return NextResponse.redirect(url, 303);
 }
 
@@ -88,12 +94,17 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   if (!env.DATABASE_URL) {
-    return redirectToAdmin(request, "error=database_not_configured");
+    return redirectToEditor(request, "error=database_not_configured");
+  }
+
+  if (isAdminContentPhase3Enabled()) {
+    return redirectToEditor(request, "error=content_phase3_requires_revision_workflow");
   }
 
   let uploadedImageObjectKey: string | undefined;
   let preparedImage: PreparedContentImage | undefined;
   let contentPersisted = false;
+  let returnTo: string | undefined;
 
   try {
     const formData = await request.formData();
@@ -112,7 +123,9 @@ export async function POST(request: Request): Promise<NextResponse> {
       ctaBody: String(formData.get("ctaBody") ?? "").trim() || undefined,
       imageAlt: String(formData.get("imageAlt") ?? "").trim() || undefined,
       clearImage: String(formData.get("clearImage") ?? "") === "on",
+      returnTo: String(formData.get("returnTo") ?? "").trim() || undefined,
     });
+    returnTo = parsed.returnTo;
     const defaults = getSiteContentDefaults(parsed.key);
     const uploadedImage = formData.get("imageFile");
     preparedImage =
@@ -183,13 +196,14 @@ export async function POST(request: Request): Promise<NextResponse> {
               }
             : {}),
         },
+        select: { key: true },
       });
     });
     contentPersisted = true;
     await attemptStorageDeletions(deletionTargets);
     invalidateSiteContentCache();
 
-    return redirectToAdmin(request, "notice=site_content_updated");
+    return redirectToEditor(request, "notice=site_content_updated", returnTo);
   } catch (error) {
     if (preparedImage && !contentPersisted) {
       await Promise.allSettled([
@@ -199,9 +213,16 @@ export async function POST(request: Request): Promise<NextResponse> {
     }
 
     if (error instanceof z.ZodError) {
-      return redirectToAdmin(request, "error=invalid_site_content_payload");
+      return redirectToEditor(request, "error=invalid_site_content_payload", returnTo);
     }
 
-    return redirectToAdmin(request, "error=site_content_update_failed");
+    const prismaError = error as { code?: unknown; meta?: unknown };
+    console.error("Unable to update site content.", {
+      name: error instanceof Error ? error.name : "UnknownError",
+      code: typeof prismaError?.code === "string" ? prismaError.code : undefined,
+      meta: prismaError?.meta,
+    });
+
+    return redirectToEditor(request, "error=site_content_update_failed", returnTo);
   }
 }

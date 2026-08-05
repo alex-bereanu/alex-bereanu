@@ -50,17 +50,17 @@ const [
 includesAll(schema, ["enum MediaStatus", "model MediaUploadSession", "model MediaProcessingJob", "sourceStorageArea", "archiveStorageArea", "largeStorageKey", "placeholderDataUrl"], "media schema");
 includesAll(migration, ["CREATE TABLE \"MediaUploadSession\"", "CREATE TABLE \"MediaProcessingJob\"", "legacy_derivatives_missing"], "media migration");
 includesAll(sessions, ["quarantine/", "expectedSha256", "UPLOAD_SESSION_MAX_AGE_MS", "enqueueStorageDeletions"], "upload sessions");
-includesAll(processing, ["FOR UPDATE SKIP LOCKED", "headObject", "failOn: \"warning\"", "MAX_IMAGE_PIXEL_COUNT", 'sourceArea: StorageArea = "PRIVATE"', '"metadata-stripped": "true"', "VERIFY_ARCHIVE", "scannerResponseSchema", "MediaStatus.READY"], "durable processing");
+includesAll(processing, ["FOR UPDATE SKIP LOCKED", "headObject", "failOn: \"warning\"", "MAX_IMAGE_PIXEL_COUNT", 'sourceArea: StorageArea = "PRIVATE"', 'IMAGE_VARIANT_VERSION = "v2"', '{ name: "small", maxSize: 800, quality: 82 }', '{ name: "medium", maxSize: 1440, quality: 84 }', '{ name: "large", maxSize: 2560, quality: 86 }', '"variant-version": IMAGE_VARIANT_VERSION', '"metadata-stripped": "true"', "VERIFY_ARCHIVE", "scannerResponseSchema", "MediaStatus.READY"], "durable processing");
 includesAll(assetFinalize, ["uploadSessionIds", "queueUploadedSessions", "after("], "asset finalization");
 includesAll(archiveFinalize, ["uploadSessionId", "queueUploadedSessions", "after("], "archive finalization");
 includesAll(worker, ["isInternalRequestAuthorized", "runMediaProcessingQueue", "reconcileExpiredUploadSessions"], "worker authentication");
 includesAll(internalAuth, ["MEDIA_WORKER_SECRET", "CRON_SECRET", "timingSafeEqual"], "internal credential verification");
 includesAll(privateMedia, ['status: "READY"', 'variant !== "large"', 'getObjectStream(objectKey, "PRIVATE")'], "private delivery");
-includesAll(galleryAccess, ['where: { status: "READY" }', "archiveStatus === \"READY\"", "largeStorageKey"], "private gallery publication gate");
+includesAll(galleryAccess, ['status: "READY" as const', "availablePrivateAssetWhere", "archiveStatus === \"READY\"", "largeStorageKey"], "private gallery publication gate");
 includesAll(publicGallery, ['status: "READY"', "largeSrc", "placeholderDataUrl"], "public gallery publication gate");
 includesAll(assetDelete, ["largeStorageKey", "enqueueStorageDeletions"], "asset deletion coverage");
 includesAll(galleryDelete, ["quarantineObjectKey", "largeStorageKey", "enqueueStorageDeletions"], "gallery deletion coverage");
-includesAll(backfill, ["DRY RUN", "--execute", "REBUILD_IMAGE", "processingJobs"], "controlled backfill");
+includesAll(backfill, ["DRY RUN", "--execute", "--rebuild-ready", "targetVariantMarker", "READY V1 REBUILD", "REBUILD_IMAGE", "processingJobs"], "controlled backfill");
 includesAll(siteContentUpdate, ["prepareSiteContentImageVariants", "preparedImage?.small.objectKey", "preparedImage?.medium.objectKey"], "site-content publication gate");
 includesAll(imageVariants, ["MAX_IMAGE_PIXEL_COUNT", 'failOn: "warning"', "prepareSiteContentImageVariants", "Promise.allSettled"], "site-content derivatives");
 

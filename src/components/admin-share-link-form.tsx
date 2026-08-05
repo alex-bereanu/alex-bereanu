@@ -5,6 +5,8 @@ import { FormEvent, useState } from "react";
 type AdminShareLinkFormProps = {
   csrfToken: string;
   galleryId: string;
+  phase4Enabled?: boolean;
+  replaceableLinks?: Array<{ id: string; label: string }>;
 };
 
 type CreatedLink = {
@@ -12,9 +14,10 @@ type CreatedLink = {
   expiresAt: string;
   passwordMustBeSharedSeparately: boolean;
   emailStatus: "NOT_REQUESTED" | "SENT" | "SKIPPED" | "FAILED";
+  replacedExistingLink?: boolean;
 };
 
-export function AdminShareLinkForm({ csrfToken, galleryId }: AdminShareLinkFormProps) {
+export function AdminShareLinkForm({ csrfToken, galleryId, phase4Enabled = false, replaceableLinks = [] }: AdminShareLinkFormProps) {
   const [createdLink, setCreatedLink] = useState<CreatedLink | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -39,6 +42,7 @@ export function AdminShareLinkForm({ csrfToken, galleryId }: AdminShareLinkFormP
           recipientEmail: String(formData.get("recipientEmail") ?? ""),
           expiresAt: String(formData.get("expiresAt") ?? ""),
           maxDownloads: String(formData.get("maxDownloads") ?? ""),
+          replacesShareLinkId: String(formData.get("replacesShareLinkId") ?? ""),
           sendEmail: formData.get("sendEmail") === "on",
         }),
       });
@@ -55,7 +59,9 @@ export function AdminShareLinkForm({ csrfToken, galleryId }: AdminShareLinkFormP
           ? "Secure link created, but email delivery failed. Copy the link now and send it manually."
           : payload.emailStatus === "SKIPPED"
             ? "Secure link created, but email is not configured. Copy the link now and send it manually."
-            : "Secure link created. Copy it now; the capability token is not stored in recoverable form.",
+            : payload.replacedExistingLink
+              ? "Replacement created and the previous link was revoked immediately. Copy the new link now."
+              : "Secure link created. Copy it now; the capability token is not stored in recoverable form.",
       );
       form.reset();
     } catch {
@@ -94,10 +100,18 @@ export function AdminShareLinkForm({ csrfToken, galleryId }: AdminShareLinkFormP
           <span>Expiry (defaults to 30 days)</span>
           <input className="rounded border px-3 py-2 text-base" name="expiresAt" type="datetime-local" autoComplete="off" />
         </label>
-        <label className="form-field">
-          <span>Maximum Downloads <span className="font-normal text-neutral-500">(Optional)</span></span>
+        {phase4Enabled && replaceableLinks.length > 0 ? <label className="form-field">
+          <span>Replace an active link <span className="font-normal text-neutral-500">(Optional)</span></span>
+          <select className="rounded border px-3 py-2 text-base" name="replacesShareLinkId" defaultValue="">
+            <option value="">Create an additional link</option>
+            {replaceableLinks.map((link) => <option key={link.id} value={link.id}>{link.label}</option>)}
+          </select>
+          <span className="form-helper">Replacing revokes the selected link in the same transaction that creates the new one.</span>
+        </label> : null}
+        {!phase4Enabled ? <label className="form-field">
+          <span>Maximum Downloads <span className="font-normal text-neutral-500">(Legacy option)</span></span>
           <input className="rounded border px-3 py-2 text-base" name="maxDownloads" type="number" inputMode="numeric" min={1} max={10_000} autoComplete="off" />
-        </label>
+        </label> : null}
         <label className="inline-flex items-center gap-2 text-xs text-neutral-700">
           <input name="sendEmail" type="checkbox" /> Send link via email
         </label>

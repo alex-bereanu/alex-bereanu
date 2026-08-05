@@ -2,13 +2,17 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import fs from "node:fs";
 import path from "node:path";
 
-import { PrismaClient } from "../src/generated/prisma/client.ts";
+import generatedPrisma from "../src/generated/prisma/client.ts";
+
+const { PrismaClient } = generatedPrisma;
 
 loadEnvFile(".env");
 loadEnvFile(".env.local");
 
 const execute = process.argv.includes("--execute");
+const rebuildReady = process.argv.includes("--rebuild-ready");
 const limit = parsePositiveIntegerArgument("--limit=");
+const targetVariantMarker = "-v2-";
 const prisma = new PrismaClient({ adapter: new PrismaPg(requireEnv("DATABASE_URL")) });
 
 function loadEnvFile(filename) {
@@ -47,16 +51,24 @@ function parsePositiveIntegerArgument(prefix) {
 }
 
 try {
+  const eligibilityFilter = rebuildReady
+    ? {
+        status: "READY",
+        NOT: { smallStorageKey: { contains: targetVariantMarker } },
+      }
+    : {
+        OR: [
+          { status: { not: "READY" } },
+          { smallStorageKey: null },
+          { mediumStorageKey: null },
+          { largeStorageKey: null },
+          { placeholderDataUrl: null },
+          { sourceVerifiedAt: null },
+        ],
+      };
   const assets = await prisma.galleryAsset.findMany({
     where: {
-      OR: [
-        { status: { not: "READY" } },
-        { smallStorageKey: null },
-        { mediumStorageKey: null },
-        { largeStorageKey: null },
-        { placeholderDataUrl: null },
-        { sourceVerifiedAt: null },
-      ],
+      ...eligibilityFilter,
       processingJobs: {
         none: { status: { in: ["PENDING", "PROCESSING", "RETRY"] } },
       },
@@ -66,7 +78,9 @@ try {
     select: { id: true, originalFilename: true, status: true },
   });
 
-  console.log(`Eligible gallery assets: ${assets.length}. Mode: ${execute ? "EXECUTE" : "DRY RUN"}.`);
+  console.log(
+    `Eligible gallery assets: ${assets.length}. Scope: ${rebuildReady ? "READY V1 REBUILD" : "INCOMPLETE"}. Mode: ${execute ? "EXECUTE" : "DRY RUN"}.`,
+  );
   for (const asset of assets.slice(0, 20)) {
     console.log(`- ${asset.id} [${asset.status}] ${asset.originalFilename}`);
   }

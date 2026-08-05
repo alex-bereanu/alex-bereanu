@@ -4,7 +4,11 @@ import { z } from "zod";
 import { env } from "@/config/env";
 import { prisma } from "@/lib/db";
 import { requireAdminRequestSession } from "@/server/auth/admin-guard";
+import { recordSecurityAuditEvent } from "@/server/security/audit";
+import { getClientIp } from "@/server/security/rate-limit";
 import { verifyMutationProtection } from "@/server/security/request-protection";
+import { isAdminGalleryPhase2Enabled } from "@/server/services/admin-gallery-phase2";
+import { recycleGalleryAssets } from "@/server/services/gallery-recycle-bin";
 import { getStorageAreaForGalleryVisibility } from "@/server/services/storage";
 import { invalidatePublicGalleryCache } from "@/server/services/public-cache";
 import {
@@ -19,7 +23,7 @@ const deleteSchema = z.object({
 });
 
 function redirectToAdmin(request: Request, query: string): NextResponse {
-  const url = new URL(`/admin/galleries?view=expanded&${query}`, request.url);
+  const url = new URL(`/admin/galleries?${query}`, request.url);
   return NextResponse.redirect(url, 303);
 }
 
@@ -71,6 +75,23 @@ export async function POST(request: Request): Promise<NextResponse> {
   try {
     const parsed = await parseDeletePayload(request);
 
+    if (isAdminGalleryPhase2Enabled()) {
+      const recycled = await recycleGalleryAssets({ galleryId: parsed.galleryId, assetIds: [parsed.assetId] });
+      await recordSecurityAuditEvent({
+        eventType: "gallery.asset.recycle", outcome: recycled > 0 ? "SUCCESS" : "FAILURE",
+        clientIp: getClientIp(request), resourceType: "gallery", resourceId: parsed.galleryId,
+        metadata: { asset_id: parsed.assetId, retention_days: env.GALLERY_RECYCLE_RETENTION_DAYS ?? 30 },
+      });
+      if (recycled === 0) {
+        return jsonMode
+          ? NextResponse.json({ error: "Photo not found or already recycled." }, { status: 404 })
+          : NextResponse.redirect(new URL(`/admin/galleries/${parsed.galleryId}?tab=photos&error=asset_delete_failed`, request.url), 303);
+      }
+      return jsonMode
+        ? NextResponse.json({ ok: true, recycledAssetId: parsed.assetId, storageDeletionQueued: false })
+        : NextResponse.redirect(new URL(`/admin/galleries/${parsed.galleryId}?tab=photos&notice=asset_recycled`, request.url), 303);
+    }
+
     const asset = await prisma.galleryAsset.findFirst({
       where: {
         id: parsed.assetId,
@@ -109,7 +130,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     await prisma.$transaction(async (transaction) => {
       await enqueueStorageDeletions(transaction, deletionTargets);
-      await transaction.galleryAsset.delete({ where: { id: asset.id } });
+      await transaction.galleryAsset.delete({ where: { id: asset.id }, select: { id: true } });
     });
     await attemptStorageDeletions(deletionTargets);
     invalidatePublicGalleryCache();

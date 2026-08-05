@@ -21,20 +21,29 @@ Configure `OBSERVABILITY_WEBHOOK_URL`, a distinct `OBSERVABILITY_WEBHOOK_SECRET`
 - Turnstile action/hostname mismatch: high priority because it can indicate widget misuse or integration drift.
 - CSP violations: group by directive and blocked origin; alert on new script/frame/connect origins.
 - Private download denial spikes, share revocations, and admin-session revocations: dashboard and investigate anomalies.
+- Irreversible Admin action without recent authentication: count step-up challenges and alert on sustained failures, never on raw identity.
 - Dependency policy: fail CI on every unaccepted high/critical runtime advisory or expired exception.
 
 ## Media and deletion alerts
 
 - `FAILED` media processing jobs: alert immediately; require retry or documented rejection.
+- Oldest pending media-job age: warn above 10 minutes and page the owner above 30 minutes during an active upload/delivery window.
+- Client delivery `integrity_mismatch` events: alert immediately. Alert on sustained `storage_error`, `prepare_failed`, or `share_failed` rates after minimum sample thresholds.
 - Pending storage deletion jobs: alert when nonzero after the daily job and escalate any item older than 24 hours.
 - Expired upload reconciliation failures or abandoned multipart uploads: alert after one daily cycle.
 - Scanner unavailable, checksum/metadata mismatch, pixel bomb, malformed image, or archive rejection: count by safe error code only.
 
+## Phase 6 release observation
+
+- Before enabling final compatibility retirement, retain external references to the Phase 6 migration, complete storage inventory, per-gallery delivery verification, and real-device iOS/Android results. Never attach capabilities, cookies, object keys, or filenames.
+- During `PHASE6_OBSERVATION_ENDS_AT`, compare cohorts by deployment and feature-flag state. Alert immediately on any private-original authorization bypass, integrity mismatch, public source object, orphaned original, legacy archive object, or pending deletion older than 24 hours.
+- Track authorized HEAD, range, completed full transfer, and unique delivery-proof success as aggregate rates. A browser request alone is not proof that iOS or Android saved an image to Photos.
+- Keep the previous compatible deployment and flag configuration available for the entire observation window. Expired or missing rollback availability blocks rollout expansion.
+
 ## Real-user performance
 
-Aggregate by route group and device/network class. Alert when a representative seven-day p75 exceeds LCP 2.5s, INP 200ms, or CLS 0.1, and when public warm TTFB exceeds 500ms. Do not alert on one sample; require a minimum sample population and compare deployment/version cohorts. The CI Lighthouse gate uses the committed `lighthouserc.json`; RUM remains authoritative for field performance.
+Aggregate by route group and device/network class. Admin metrics must use the single `/admin` route group; private client metrics must use `/g/[private]`. Alert when a representative seven-day p75 exceeds LCP 2.5s, INP 200ms, or CLS 0.1, and when public warm TTFB exceeds 500ms. Do not alert on one sample; require a minimum sample population and compare deployment/version cohorts. The CI Lighthouse gate uses the committed `lighthouserc.json`; RUM remains authoritative for field performance.
 
 ## Response ownership
 
 Every alert needs severity, named owner, acknowledgement target, escalation contact, runbook link, and closure evidence. Review alert noise monthly. A disabled webhook, missing scheduled job, or stale health monitor is itself an alert condition.
-

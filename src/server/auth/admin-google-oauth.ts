@@ -18,6 +18,7 @@ const oauthStateSchema = z.object({
   nonce: z.string().min(1),
   codeVerifier: z.string().min(43),
   nextPath: z.string().min(1),
+  stepUp: z.boolean().default(false),
 });
 
 const googleTokenResponseSchema = z.object({
@@ -125,11 +126,13 @@ export function buildGoogleOAuthAuthorizationUrl({
   state,
   nonce,
   codeChallenge,
+  forceReauthentication = false,
 }: {
   requestUrl: string;
   state: string;
   nonce: string;
   codeChallenge: string;
+  forceReauthentication?: boolean;
 }): URL {
   const authorizationUrl = new URL(GOOGLE_AUTHORIZATION_ENDPOINT);
 
@@ -141,7 +144,8 @@ export function buildGoogleOAuthAuthorizationUrl({
   authorizationUrl.searchParams.set("nonce", nonce);
   authorizationUrl.searchParams.set("code_challenge", codeChallenge);
   authorizationUrl.searchParams.set("code_challenge_method", "S256");
-  authorizationUrl.searchParams.set("prompt", "select_account");
+  authorizationUrl.searchParams.set("prompt", forceReauthentication ? "login" : "select_account");
+  if (forceReauthentication) authorizationUrl.searchParams.set("max_age", "0");
 
   return authorizationUrl;
 }

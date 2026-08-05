@@ -2,8 +2,8 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
-      "path": "/api/internal/media-worker?limit=2",
-      "schedule": "*/5 * * * *"
+      "path": "/api/internal/media-worker?limit=10",
+      "schedule": "17 2 * * *"
     },
     {
       "path": "/api/internal/operations",
