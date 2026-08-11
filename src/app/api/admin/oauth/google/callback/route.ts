@@ -102,7 +102,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     response.cookies.set({
       name: getAdminSessionCookieName(),
       value: sessionToken,
-      ...getSecureCookieOptions(getAdminSessionMaxAgeSeconds()),
+      ...getSecureCookieOptions(getAdminSessionMaxAgeSeconds(), "lax"),
     });
     response.cookies.set({
       name: getAdminGoogleOAuthStateCookieName(),

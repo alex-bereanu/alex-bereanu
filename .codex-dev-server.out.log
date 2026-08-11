@@ -2069,3 +2069,27 @@
  GET /admin 200 in 822ms (next.js: 7ms, proxy.ts: 12ms, application-code: 803ms)
  GET /admin/galleries 200 in 197ms (next.js: 4ms, proxy.ts: 4ms, application-code: 190ms)
  GET / 200 in 280ms (next.js: 25ms, proxy.ts: 28ms, application-code: 227ms)
+  Reload env: .env.local
+ GET /admin/login?next=%2Fadmin 200 in 1568ms (next.js: 1210ms, proxy.ts: 201ms, application-code: 157ms)
+ GET / 200 in 1575ms (next.js: 1099ms, proxy.ts: 202ms, application-code: 273ms)
+ GET / 200 in 1578ms (next.js: 904ms, proxy.ts: 202ms, application-code: 472ms)
+ GET /admin/galleries 200 in 2.8s (next.js: 545ms, proxy.ts: 207ms, application-code: 2.0s)
+ GET /admin/login?next=%2Fadmin 200 in 2.1s (next.js: 1804ms, proxy.ts: 115ms, application-code: 173ms)
+ GET / 200 in 2.1s (next.js: 1652ms, proxy.ts: 391ms, application-code: 49ms)
+ GET / 200 in 2.1s (next.js: 1156ms, proxy.ts: 115ms, application-code: 828ms)
+ GET /admin/galleries 200 in 2.2s (next.js: 1882ms, proxy.ts: 114ms, application-code: 202ms)
+  Reload env: .env.local
+ GET /admin/login?next=%2Fadmin 200 in 514ms (next.js: 274ms, proxy.ts: 89ms, application-code: 151ms)
+ GET / 200 in 517ms (next.js: 387ms, proxy.ts: 89ms, application-code: 41ms)
+ GET / 200 in 521ms (next.js: 163ms, proxy.ts: 89ms, application-code: 268ms)
+ GET /admin/galleries 200 in 675ms (next.js: 343ms, proxy.ts: 89ms, application-code: 242ms)
+  Reload env: .env.local
+ GET /admin/login?next=%2Fadmin 200 in 535ms (next.js: 136ms, proxy.ts: 86ms, application-code: 314ms)
+ GET / 200 in 537ms (next.js: 404ms, proxy.ts: 86ms, application-code: 46ms)
+ GET / 200 in 540ms (next.js: 321ms, proxy.ts: 87ms, application-code: 132ms)
+ GET /admin/galleries 200 in 672ms (next.js: 231ms, proxy.ts: 87ms, application-code: 354ms)
+  Reload env: .env.local
+ GET /admin/login?next=%2Fadmin 200 in 687ms (next.js: 188ms, proxy.ts: 130ms, application-code: 369ms)
+ GET / 200 in 694ms (next.js: 311ms, proxy.ts: 129ms, application-code: 254ms)
+ GET / 200 in 693ms (next.js: 461ms, proxy.ts: 131ms, application-code: 101ms)
+ GET /admin/galleries 200 in 1840ms (next.js: 419ms, proxy.ts: 131ms, application-code: 1290ms)
