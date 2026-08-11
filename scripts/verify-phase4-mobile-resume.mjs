@@ -50,8 +50,10 @@ const [
   read("src/server/security/upload-validation.ts"),
 ]);
 
-includesAll(siteHeader, ["aria-expanded", "aria-modal", "Escape", "event.key === \"Tab\"", "mobile-drawer-close"], "mobile navigation");
-includesAll(styles, ["overflow-x: clip", "env(safe-area-inset-top)", "@media (pointer: coarse)", "prefers-reduced-motion", "min-height: 2.75rem"], "mobile CSS");
+includesAll(siteHeader, ['aria-label="Primary navigation"', 'className="header-nav"'], "inline mobile navigation");
+excludesAll(siteHeader, ['"use client"', "react-dom", "useState", "mobile-menu"], "inline mobile navigation");
+includesAll(styles, ["overflow-x: clip", "env(safe-area-inset-top)", "@media (pointer: coarse)", "prefers-reduced-motion", "min-height: 2.75rem", "flex-wrap: wrap"], "mobile CSS");
+excludesAll(styles, [".mobile-menu-", ".header-nav-desktop"], "mobile CSS");
 includesAll(contactForm, ["<label", 'type="tel"', 'autoComplete="email"', 'role="alert"'], "contact form accessibility");
 includesAll(bookingForm, ["<label", 'type="tel"', 'inputMode="numeric"', 'role="alert"'], "booking form accessibility");
 includesAll(lightbox, ["isMobile", "closeOnPullDown", "useReducedMotion", "hidden: isMobile"], "mobile lightbox");

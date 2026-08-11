@@ -53,8 +53,7 @@ includesAll(galleryGrid, ["dynamic(", "gallery-lightbox-overlay", "Load More Pho
 includesAll(responsiveImage, ["<picture", "<source", "srcSet={srcSet}", "mediumSrc", "smallWidth", "mediumWidth", "unoptimized"], "responsive pre-generated image delivery");
 includesAll(publicMosaic, ["ResponsiveGalleryImage", "mediumSrc={photo.mediumSrc}"], "public responsive gallery grid");
 includesAll(galleryGrid, ["ResponsiveGalleryImage", "mediumSrc={photo.mediumSrc}"], "private responsive gallery grid");
-includesAll(homepageMosaic, ["ResponsiveGalleryImage", "mediumSrc={photo.mediumSrc}"], "homepage responsive gallery grid");
-includesAll(homepageMosaic, ["EAGER_IMAGE_COUNT = 2", 'loading={index < EAGER_IMAGE_COUNT ? "eager" : "lazy"}'], "mobile LCP candidates");
+includesAll(homepageMosaic, ["PublicGalleryMosaic"], "homepage responsive gallery delegation");
 assert.ok(!publicMosaic.includes("yet-another-react-lightbox"), "public grid must not statically import the lightbox library");
 assert.ok(!galleryGrid.includes("yet-another-react-lightbox"), "gallery grid must not statically import the lightbox library");
 includesAll(overlay, ["yet-another-react-lightbox", "plugins/zoom", "plugins/thumbnails"], "interaction-only lightbox chunk");
