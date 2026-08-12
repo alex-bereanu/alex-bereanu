@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { getCanonicalRedirect } from "./seo";
+import { buildRobots, buildSitemap, getCanonicalRedirect } from "./seo";
 
 const config = {
   siteUrl: "https://alex.example",
@@ -74,5 +74,80 @@ test("does not redirect unknown preview hosts", () => {
       search: "",
     }),
     null,
+  );
+});
+
+const galleries = [
+  { slug: "ana-andrei", updatedAt: new Date("2026-08-01T12:00:00.000Z") },
+];
+
+test("builds the main sitemap from canonical static pages and public gallery records", () => {
+  const result = buildSitemap({
+    ...config,
+    host: "alex.example",
+    requestOrigin: "https://alex.example",
+    galleries,
+  });
+
+  assert.deepEqual(
+    result.map(({ url }) => url),
+    [
+      "https://alex.example/",
+      "https://alex.example/portfolio",
+      "https://alex.example/portfolio/weddings",
+      "https://alex.example/portfolio/portraits",
+      "https://alex.example/portfolio/automotive",
+      "https://alex.example/portfolio/landscapes",
+      "https://alex.example/portfolio/galleries/ana-andrei",
+    ],
+  );
+  assert.equal(
+    (result.at(-1)?.lastModified as Date).toISOString(),
+    "2026-08-01T12:00:00.000Z",
+  );
+  assert.equal(
+    result.some(
+      ({ url }) =>
+        url.includes("/weddings") && !url.includes("/portfolio/weddings"),
+    ),
+    false,
+  );
+});
+
+test("builds a one-entry wedding sitemap", () => {
+  assert.deepEqual(
+    buildSitemap({
+      ...config,
+      host: "weddings.example",
+      requestOrigin: "https://weddings.example",
+      galleries,
+    }),
+    [{ url: "https://weddings.example/" }],
+  );
+});
+
+test("builds host-specific robots output with private prefixes blocked", () => {
+  assert.deepEqual(
+    buildRobots({
+      ...config,
+      host: "alex.example",
+      requestOrigin: "https://alex.example",
+    }),
+    {
+      rules: {
+        userAgent: "*",
+        allow: "/",
+        disallow: ["/admin/", "/api/", "/g/"],
+      },
+      sitemap: "https://alex.example/sitemap.xml",
+    },
+  );
+  assert.equal(
+    buildRobots({
+      ...config,
+      host: "weddings.example",
+      requestOrigin: "https://weddings.example",
+    }).sitemap,
+    "https://weddings.example/sitemap.xml",
   );
 });

@@ -1,10 +1,32 @@
+import type { MetadataRoute } from "next";
+
 const passthroughPrefixes = ["/api/", "/admin/", "/g/"];
 const passthroughPaths = new Set(["/robots.txt", "/sitemap.xml", "/favicon.ico"]);
+const mainSitemapPaths = [
+  "/",
+  "/portfolio",
+  "/portfolio/weddings",
+  "/portfolio/portraits",
+  "/portfolio/automotive",
+  "/portfolio/landscapes",
+] as const;
 
 export type CanonicalRedirectInput = {
   host: string;
   pathname: string;
   search: string;
+  siteUrl?: string;
+  weddingsUrl?: string;
+};
+
+export type GallerySitemapRecord = {
+  slug: string;
+  updatedAt: Date;
+};
+
+export type SeoRouteInput = {
+  host: string;
+  requestOrigin: string;
   siteUrl?: string;
   weddingsUrl?: string;
 };
@@ -61,4 +83,46 @@ export function getCanonicalRedirect(input: CanonicalRedirectInput): string | nu
   }
 
   return siteRoot ? redirectUrl(siteRoot, input.pathname, input.search) : null;
+}
+
+function canonicalRoot(input: SeoRouteInput): URL {
+  const configuredRoot = isWeddingHost(input.host, input.weddingsUrl)
+    ? rootUrl(input.weddingsUrl)
+    : rootUrl(input.siteUrl);
+  return configuredRoot ?? rootUrl(input.requestOrigin)!;
+}
+
+export function buildSitemap(
+  input: SeoRouteInput & { galleries: GallerySitemapRecord[] },
+): MetadataRoute.Sitemap {
+  const root = canonicalRoot(input);
+
+  if (isWeddingHost(input.host, input.weddingsUrl)) {
+    return [{ url: root.toString() }];
+  }
+
+  return [
+    ...mainSitemapPaths.map((pathname) => ({
+      url: new URL(pathname, root).toString(),
+    })),
+    ...input.galleries.map((gallery) => ({
+      url: new URL(
+        `/portfolio/galleries/${encodeURIComponent(gallery.slug)}`,
+        root,
+      ).toString(),
+      lastModified: gallery.updatedAt,
+    })),
+  ];
+}
+
+export function buildRobots(input: SeoRouteInput): MetadataRoute.Robots {
+  const root = canonicalRoot(input);
+  return {
+    rules: {
+      userAgent: "*",
+      allow: "/",
+      disallow: ["/admin/", "/api/", "/g/"],
+    },
+    sitemap: new URL("/sitemap.xml", root).toString(),
+  };
 }
