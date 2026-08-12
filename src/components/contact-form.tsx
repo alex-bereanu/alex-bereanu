@@ -170,7 +170,13 @@ export function ContactForm({ csrfToken, turnstileSiteKey }: ContactFormProps) {
         <textarea className="editorial-input rounded px-3 py-2" name="message" rows={5} minLength={5} required />
         <span className="form-helper">Include the subject, location, timing, and how the photographs will be used.</span>
       </label>
-      <TurnstileField action="contact" className="sm:col-span-2" siteKey={turnstileSiteKey} />
+      <TurnstileField
+        action="contact"
+        appearance="interaction-only"
+        className="flex justify-center sm:col-span-2"
+        siteKey={turnstileSiteKey}
+        size="compact"
+      />
 
       <button
         className="editorial-button min-h-11 justify-self-center rounded px-5 py-2.5 disabled:cursor-not-allowed disabled:opacity-60 sm:col-span-2"

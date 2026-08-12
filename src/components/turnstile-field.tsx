@@ -4,12 +4,17 @@ import { useEffect, useRef, useState } from "react";
 
 import type { TurnstileAction } from "@/lib/turnstile";
 
+type TurnstileAppearance = "always" | "execute" | "interaction-only";
+type TurnstileSize = "normal" | "flexible" | "compact";
+
 type TurnstileApi = {
   render: (
     container: HTMLElement,
     options: {
       sitekey: string;
       action: TurnstileAction;
+      appearance: TurnstileAppearance;
+      size: TurnstileSize;
       callback: (token: string) => void;
       "expired-callback": () => void;
       "error-callback": () => void;
@@ -27,6 +32,8 @@ type TurnstileWindow = Window & {
 type TurnstileFieldProps = {
   siteKey?: string;
   action: TurnstileAction;
+  appearance?: TurnstileAppearance;
+  size?: TurnstileSize;
   className?: string;
 };
 
@@ -55,7 +62,13 @@ function loadTurnstileScript(): Promise<void> {
   return turnstileWindow.__turnstileScriptLoading;
 }
 
-export function TurnstileField({ siteKey, action, className }: TurnstileFieldProps) {
+export function TurnstileField({
+  siteKey,
+  action,
+  appearance = "always",
+  size = "normal",
+  className,
+}: TurnstileFieldProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const widgetIdRef = useRef<string | null>(null);
   const [token, setToken] = useState("");
@@ -99,6 +112,8 @@ export function TurnstileField({ siteKey, action, className }: TurnstileFieldPro
         widgetIdRef.current = turnstile.render(containerRef.current, {
           sitekey: siteKey,
           action,
+          appearance,
+          size,
           callback: setToken,
           "expired-callback": () => setToken(""),
           "error-callback": () => setToken(""),
@@ -114,7 +129,7 @@ export function TurnstileField({ siteKey, action, className }: TurnstileFieldPro
         (window as TurnstileWindow).turnstile?.remove(widgetIdRef.current);
       }
     };
-  }, [action, shouldLoad, siteKey]);
+  }, [action, appearance, shouldLoad, siteKey, size]);
 
   if (!siteKey) {
     return null;
