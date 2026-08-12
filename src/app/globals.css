@@ -862,9 +862,17 @@ button {
   }
 
   .header-nav {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     overflow: visible;
-    row-gap: 0;
+    gap: clamp(0.18rem, 1vw, 0.4rem);
+  }
+
+  .site-header .header-nav .header-link {
+    font-size: clamp(0.48rem, 2.25vw, 0.58rem);
+  }
+
+  .site-header .header-nav .header-link::after {
+    bottom: calc(50% - 0.5rem);
   }
 
   .site-footer-layout {
