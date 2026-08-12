@@ -1,4 +1,4 @@
-import type { MetadataRoute } from "next";
+import type { Metadata, MetadataRoute } from "next";
 
 const passthroughPrefixes = ["/api/", "/admin/", "/g/"];
 const passthroughPaths = new Set(["/robots.txt", "/sitemap.xml", "/favicon.ico"]);
@@ -10,6 +10,10 @@ const mainSitemapPaths = [
   "/portfolio/automotive",
   "/portfolio/landscapes",
 ] as const;
+const DEFAULT_WEDDING_TITLE =
+  "Wedding Photographer Bucharest | Alex Bereanu";
+const DEFAULT_WEDDING_DESCRIPTION =
+  "Documentary and editorial wedding photography in Bucharest, Romania, with destination wedding coverage available worldwide.";
 
 export type CanonicalRedirectInput = {
   host: string;
@@ -29,6 +33,22 @@ export type SeoRouteInput = {
   requestOrigin: string;
   siteUrl?: string;
   weddingsUrl?: string;
+};
+
+export type ResolvedWeddingSeo = {
+  title: string;
+  description: string;
+  canonical: string;
+  imageUrl?: string;
+  imageAlt?: string;
+};
+
+export type ResolveWeddingSeoInput = {
+  weddingsUrl?: string;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+  imageUrl?: string;
+  imageAlt?: string;
 };
 
 function rootUrl(value?: string): URL | null {
@@ -125,4 +145,71 @@ export function buildRobots(input: SeoRouteInput): MetadataRoute.Robots {
     },
     sitemap: new URL("/sitemap.xml", root).toString(),
   };
+}
+
+export function resolveWeddingSeo(
+  input: ResolveWeddingSeoInput,
+): ResolvedWeddingSeo {
+  return {
+    title: input.seoTitle?.trim() || DEFAULT_WEDDING_TITLE,
+    description:
+      input.seoDescription?.trim() || DEFAULT_WEDDING_DESCRIPTION,
+    canonical: rootUrl(input.weddingsUrl)?.toString() ?? "/weddings",
+    imageUrl: input.imageUrl,
+    imageAlt: input.imageAlt,
+  };
+}
+
+export function buildWeddingMetadata(seo: ResolvedWeddingSeo): Metadata {
+  const images = seo.imageUrl
+    ? [{ url: seo.imageUrl, alt: seo.imageAlt ?? seo.title }]
+    : undefined;
+
+  return {
+    title: { absolute: seo.title },
+    description: seo.description,
+    alternates: { canonical: seo.canonical },
+    openGraph: {
+      title: seo.title,
+      description: seo.description,
+      type: "website",
+      url: seo.canonical,
+      images,
+    },
+    twitter: {
+      card: seo.imageUrl ? "summary_large_image" : "summary",
+      title: seo.title,
+      description: seo.description,
+      images: seo.imageUrl ? [seo.imageUrl] : undefined,
+    },
+  };
+}
+
+export function buildWeddingServiceJsonLd(input: {
+  seo: ResolvedWeddingSeo;
+  brandName: string;
+  siteUrl?: string;
+}) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "Service",
+    name: "Wedding photography",
+    serviceType: "Wedding photography",
+    url: input.seo.canonical,
+    description: input.seo.description,
+    provider: {
+      "@type": "ProfessionalService",
+      name: input.brandName,
+      url: rootUrl(input.siteUrl)?.toString() ?? input.seo.canonical,
+    },
+    areaServed: [
+      { "@type": "City", name: "Bucharest" },
+      { "@type": "Country", name: "Romania" },
+      { "@type": "Place", name: "Worldwide" },
+    ],
+  };
+}
+
+export function serializeJsonLd(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, "\\u003c");
 }

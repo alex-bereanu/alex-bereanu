@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildRobots, buildSitemap, getCanonicalRedirect } from "./seo";
+import {
+  buildRobots,
+  buildSitemap,
+  buildWeddingMetadata,
+  buildWeddingServiceJsonLd,
+  getCanonicalRedirect,
+  resolveWeddingSeo,
+  serializeJsonLd,
+} from "./seo";
 
 const config = {
   siteUrl: "https://alex.example",
@@ -150,4 +158,62 @@ test("builds host-specific robots output with private prefixes blocked", () => {
     }).sitemap,
     "https://weddings.example/sitemap.xml",
   );
+});
+
+test("resolves canonical Bucharest and worldwide wedding metadata with an optional image", () => {
+  const seo = resolveWeddingSeo({
+    weddingsUrl: "https://weddings.example/presentation",
+    seoTitle: "",
+    seoDescription: "",
+    imageUrl: "https://cdn.example/wedding.jpg",
+    imageAlt: "A couple leaving their Bucharest ceremony",
+  });
+  const metadata = buildWeddingMetadata(seo);
+
+  assert.equal(seo.canonical, "https://weddings.example/");
+  assert.equal(seo.title, "Wedding Photographer Bucharest | Alex Bereanu");
+  assert.match(seo.description, /Bucharest, Romania/);
+  assert.match(seo.description, /worldwide/);
+  assert.deepEqual(metadata.alternates, {
+    canonical: "https://weddings.example/",
+  });
+  assert.equal(metadata.openGraph?.url, "https://weddings.example/");
+  assert.ok(metadata.twitter && "card" in metadata.twitter);
+  assert.equal(metadata.twitter.card, "summary_large_image");
+});
+
+test("honors managed SEO overrides", () => {
+  const seo = resolveWeddingSeo({
+    weddingsUrl: "https://weddings.example",
+    seoTitle: "Custom title",
+    seoDescription: "Custom description",
+  });
+  assert.equal(seo.title, "Custom title");
+  assert.equal(seo.description, "Custom description");
+});
+
+test("describes only known wedding service facts and safely serializes JSON-LD", () => {
+  const seo = resolveWeddingSeo({
+    weddingsUrl: "https://weddings.example",
+    seoDescription: "Editorial <wedding> photography",
+  });
+  const value = buildWeddingServiceJsonLd({
+    seo,
+    brandName: "Alex Bereanu Photography",
+    siteUrl: "https://alex.example",
+  });
+  const json = serializeJsonLd(value);
+
+  assert.equal(value["@type"], "Service");
+  assert.deepEqual(
+    value.areaServed.map((area: { name: string }) => area.name),
+    ["Bucharest", "Romania", "Worldwide"],
+  );
+  assert.equal("address" in value.provider, false);
+  assert.equal("telephone" in value.provider, false);
+  assert.equal("aggregateRating" in value.provider, false);
+  assert.equal("offers" in value, false);
+  assert.equal("sameAs" in value.provider, false);
+  assert.equal(json.includes("<"), false);
+  assert.match(json, /\\u003cwedding>/);
 });
