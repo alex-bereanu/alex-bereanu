@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { env } from "@/config/env";
+import { getCanonicalRedirect, isWeddingHost } from "@/lib/seo";
 
 const ADMIN_LOGIN_PATH = "/admin/login";
 const ADMIN_SETUP_PATH = "/admin/setup";
@@ -87,9 +88,25 @@ function normalizeHost(hostHeader: string | null): string {
 
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   const pathname = request.nextUrl.pathname;
-  const host = normalizeHost(request.headers.get("host"));
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const host = normalizeHost(forwardedHost ?? request.headers.get("host"));
+  const canonicalRedirect = getCanonicalRedirect({
+    host,
+    pathname,
+    search: request.nextUrl.search,
+    siteUrl: env.NEXT_PUBLIC_SITE_URL,
+    weddingsUrl: env.NEXT_PUBLIC_WEDDINGS_URL,
+  });
 
-  if (env.WEDDINGS_DOMAIN && host === env.WEDDINGS_DOMAIN.toLowerCase() && pathname === "/") {
+  if (canonicalRedirect) {
+    return withSecurityHeaders(NextResponse.redirect(canonicalRedirect, 308));
+  }
+
+  const requestUsesWeddingHost = env.NEXT_PUBLIC_WEDDINGS_URL
+    ? isWeddingHost(host, env.NEXT_PUBLIC_WEDDINGS_URL)
+    : Boolean(env.WEDDINGS_DOMAIN && host === env.WEDDINGS_DOMAIN.toLowerCase());
+
+  if (requestUsesWeddingHost && pathname === "/") {
     const rewriteUrl = request.nextUrl.clone();
     rewriteUrl.pathname = "/weddings";
     return withSecurityHeaders(NextResponse.rewrite(rewriteUrl));

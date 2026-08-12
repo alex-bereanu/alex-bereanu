@@ -4,6 +4,7 @@ import { cache } from "react";
 
 import { env } from "@/config/env";
 import { prisma } from "@/lib/db";
+import type { GallerySitemapRecord } from "@/lib/seo";
 import { portfolioCategories, type PortfolioCategory } from "@/lib/site-data";
 import { PUBLIC_GALLERY_CACHE_TAG } from "@/server/services/public-cache";
 import { getPortfolioContentKey, getSiteContents } from "@/server/services/site-content";
@@ -179,6 +180,15 @@ const publishedPublicGalleryWhere: Prisma.GalleryWhereInput = {
   visibility: "PUBLIC",
   ...(isAdminGalleryPhase2Enabled() ? { status: "PUBLISHED" } : { isActive: true }),
 };
+
+export async function getPublicGallerySitemapRecords(): Promise<GallerySitemapRecord[]> {
+  if (!env.DATABASE_URL) return [];
+  return prisma.gallery.findMany({
+    where: publishedPublicGalleryWhere,
+    orderBy: [{ updatedAt: "desc" }],
+    select: { slug: true, updatedAt: true },
+  });
+}
 
 function toPage(assets: GalleryPhotoAsset[], galleryTitle: string): GalleryAssetPage {
   const pageAssets = assets.slice(0, GALLERY_ASSET_PAGE_SIZE);
