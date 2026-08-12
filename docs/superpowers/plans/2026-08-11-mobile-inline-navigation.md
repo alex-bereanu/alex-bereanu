@@ -12,7 +12,7 @@
 
 - Desktop must preserve the current centered brand and single-row centered navigation.
 - Mobile navigation must appear immediately beneath the centered brand.
-- Mobile navigation must keep all six links in one centered row at widths down to 320px, without clipping or horizontal scrolling.
+- Mobile navigation must keep all seven links in one centered row at widths down to 320px, without clipping or horizontal scrolling.
 - Mobile links must retain the existing 44px minimum coarse-pointer touch target.
 - The active/focus underline must sit approximately 1-2px below the visible label instead of at the bottom of the touch target.
 - Navigation destinations, page content, footer behavior, and admin navigation must remain unchanged.
@@ -182,3 +182,78 @@ Inspect `/` at 320x568, 390x844, and 1440x900. Confirm one mobile navigation row
 - [ ] **Step 5: Commit, merge, and deploy**
 
 Commit the focused verifier and CSS change on `codex/mobile-inline-navigation`, fast-forward `main` after verification, push `main`, and verify the production URL at mobile width.
+
+---
+
+### Task 3: Enlarge mobile navigation typography and spacing
+
+**Files:**
+- Modify: `scripts/verify-phase4-mobile-resume.mjs:55`
+- Modify: `src/app/globals.css:864-875`
+
+**Interfaces:**
+- Consumes: the existing mobile `.header-nav`, `.site-header .header-nav .header-link`, and `.header-link::after` rules.
+- Produces: a seven-link, non-wrapping mobile navigation with responsive font and gap values while leaving desktop CSS and the underline offset unchanged.
+
+- [ ] **Step 1: Change the source-level verifier to require the approved values**
+
+In `scripts/verify-phase4-mobile-resume.mjs`, replace the old mobile gap and font fragments with:
+
+```js
+"gap: clamp(0.2rem, 1.1vw, 0.45rem)",
+"font-size: clamp(0.48rem, 2.4vw, 0.62rem)",
+```
+
+Keep the existing `flex-wrap: nowrap`, `min-height: 2.75rem`, and `bottom: calc(50% - 0.5rem)` fragments.
+
+- [ ] **Step 2: Run the focused verifier and confirm the expected failure**
+
+Run: `npm run experience:verify`
+
+Expected: FAIL with the new gap and font fragments reported as missing because the stylesheet still contains the previous values.
+
+- [ ] **Step 3: Apply the minimal mobile-only CSS change**
+
+In `src/app/globals.css`, change only these two declarations inside `@media (max-width: 768px)`:
+
+```css
+  .header-nav {
+    gap: clamp(0.2rem, 1.1vw, 0.45rem);
+  }
+
+  .site-header .header-nav .header-link {
+    font-size: clamp(0.48rem, 2.4vw, 0.62rem);
+  }
+```
+
+- [ ] **Step 4: Run focused and static verification**
+
+Run:
+
+```powershell
+npm run experience:verify
+npm run lint
+npm run typecheck
+npm run build
+```
+
+Expected: every command exits with code 0.
+
+- [ ] **Step 5: Verify rendered geometry**
+
+Inspect the seven-link portfolio header at 320x568 and 390x844, and the public header at 1440x900. Confirm:
+
+- 320px: 7.68px link type, 3.52px gap, one row, and no horizontal overflow.
+- 390px: 9.36px link type, 4.29px gap, one row, and no horizontal overflow.
+- Desktop: 11.52px link type remains unchanged.
+- Underline: the existing `bottom: calc(50% - 0.5rem)` remains approximately 1-2px below the label.
+
+- [ ] **Step 6: Commit and deploy**
+
+```powershell
+git add -- scripts/verify-phase4-mobile-resume.mjs src/app/globals.css
+git commit -m "fix: enlarge mobile navigation links"
+git push origin main
+```
+
+After the deployment completes, repeat the 320px and 390px geometry checks against `https://alex-bereanu.vercel.app`.
