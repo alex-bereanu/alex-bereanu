@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Keep the public navigation visible beneath “Alex Bereanu” at every viewport and wrap the links on narrow mobile screens.
+**Goal:** Keep the public navigation visible beneath "Alex Bereanu" at every viewport, with all mobile links fitting on one centered row and the active underline close to its label.
 
-**Architecture:** Simplify `SiteHeader` to one stateless navigation tree shared by desktop and mobile. Remove the drawer-only client behavior and CSS, then use the existing mobile media query to preserve the vertical header layout and enable centered link wrapping.
+**Architecture:** Simplify `SiteHeader` to one stateless navigation tree shared by desktop and mobile. Remove the drawer-only client behavior and CSS, then use the existing mobile media query to preserve the vertical header layout, scale the mobile link typography and spacing, and position the underline relative to the visible label while retaining coarse-pointer touch targets.
 
 **Tech Stack:** Next.js 16 App Router, React 19, TypeScript, CSS, Node.js verification scripts
 
@@ -12,7 +12,9 @@
 
 - Desktop must preserve the current centered brand and single-row centered navigation.
 - Mobile navigation must appear immediately beneath the centered brand.
-- Narrow mobile navigation must wrap into centered rows without shrinking, clipping, or horizontal scrolling.
+- Mobile navigation must keep all six links in one centered row at widths down to 320px, without clipping or horizontal scrolling.
+- Mobile links must retain the existing 44px minimum coarse-pointer touch target.
+- The active/focus underline must sit approximately 1-2px below the visible label instead of at the bottom of the touch target.
 - Navigation destinations, page content, footer behavior, and admin navigation must remain unchanged.
 - Do not add dependencies.
 
@@ -125,3 +127,58 @@ Start the existing development server or `npm run dev`, then inspect `/` at 1440
 git add -- scripts/verify-phase4-mobile-resume.mjs src/components/site-header.tsx src/app/globals.css docs/superpowers/plans/2026-08-11-mobile-inline-navigation.md
 git commit -m "feat: keep mobile navigation below brand"
 ```
+
+---
+
+### Task 2: Fit mobile links on one row and tighten the underline
+
+**Files:**
+- Modify: `scripts/verify-phase4-mobile-resume.mjs`
+- Modify: `src/app/globals.css`
+
+- [ ] **Step 1: Update the mobile CSS verification first**
+
+Replace the wrapping assertion with source-level assertions for `flex-wrap: nowrap`, the responsive mobile font size, the responsive mobile gap, and the underline offset. Keep the 44px coarse-pointer assertion.
+
+- [ ] **Step 2: Run the focused verifier and confirm the expected failure**
+
+Run: `npm run experience:verify`
+
+Expected: FAIL because the approved single-row font, gap, and underline declarations are not yet present.
+
+- [ ] **Step 3: Implement the approved mobile CSS**
+
+Inside `@media (max-width: 768px)`, keep the desktop rules unchanged and set:
+
+```css
+  .header-nav {
+    flex-wrap: nowrap;
+    overflow: visible;
+    gap: clamp(0.18rem, 1vw, 0.4rem);
+  }
+
+  .site-header .header-nav .header-link {
+    font-size: clamp(0.48rem, 2.25vw, 0.58rem);
+  }
+
+  .site-header .header-nav .header-link::after {
+    bottom: calc(50% - 0.5rem);
+  }
+```
+
+- [ ] **Step 4: Verify locally at representative widths**
+
+Run:
+
+```powershell
+npm run experience:verify
+npm run lint
+npm run typecheck
+npm run build
+```
+
+Inspect `/` at 320x568, 390x844, and 1440x900. Confirm one mobile navigation row, no horizontal overflow, a 44px touch target under coarse pointers, an underline approximately 1-2px below its label, and unchanged desktop typography.
+
+- [ ] **Step 5: Commit, merge, and deploy**
+
+Commit the focused verifier and CSS change on `codex/mobile-inline-navigation`, fast-forward `main` after verification, push `main`, and verify the production URL at mobile width.
