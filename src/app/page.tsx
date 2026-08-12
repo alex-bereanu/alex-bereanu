@@ -46,7 +46,7 @@ export default async function Home() {
         <section id="about" className="grid scroll-mt-28 gap-6 lg:grid-cols-2">
           <div className="space-y-4">
             <h2 className="editorial-heading text-4xl">{aboutContent.title}</h2>
-            <p className="whitespace-pre-wrap text-sm text-neutral-700">
+            <p className="whitespace-pre-wrap text-justify text-sm text-neutral-700">
               {aboutContent.body}
             </p>
           </div>
