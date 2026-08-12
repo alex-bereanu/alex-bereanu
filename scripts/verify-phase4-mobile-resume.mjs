@@ -52,7 +52,7 @@ const [
 
 includesAll(siteHeader, ['aria-label="Primary navigation"', 'className="header-nav"'], "inline mobile navigation");
 excludesAll(siteHeader, ['"use client"', "react-dom", "useState", "mobile-menu"], "inline mobile navigation");
-includesAll(styles, ["overflow-x: clip", "env(safe-area-inset-top)", "@media (pointer: coarse)", "prefers-reduced-motion", "min-height: 2.75rem", "flex-wrap: nowrap", "gap: clamp(0.18rem, 1vw, 0.4rem)", "font-size: clamp(0.48rem, 2.25vw, 0.58rem)", "bottom: calc(50% - 0.5rem)"], "mobile CSS");
+includesAll(styles, ["overflow-x: clip", "env(safe-area-inset-top)", "@media (pointer: coarse)", "prefers-reduced-motion", "min-height: 2.75rem", "flex-wrap: nowrap", "gap: clamp(0.2rem, 1.1vw, 0.45rem)", "font-size: clamp(0.48rem, 2.4vw, 0.62rem)", "bottom: calc(50% - 0.5rem)"], "mobile CSS");
 excludesAll(styles, [".mobile-menu-", ".header-nav-desktop"], "mobile CSS");
 includesAll(contactForm, ["<label", 'type="tel"', 'autoComplete="email"', 'role="alert"'], "contact form accessibility");
 includesAll(bookingForm, ["<label", 'type="tel"', 'inputMode="numeric"', 'role="alert"'], "booking form accessibility");

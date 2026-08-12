@@ -864,11 +864,11 @@ button {
   .header-nav {
     flex-wrap: nowrap;
     overflow: visible;
-    gap: clamp(0.18rem, 1vw, 0.4rem);
+    gap: clamp(0.2rem, 1.1vw, 0.45rem);
   }
 
   .site-header .header-nav .header-link {
-    font-size: clamp(0.48rem, 2.25vw, 0.58rem);
+    font-size: clamp(0.48rem, 2.4vw, 0.62rem);
   }
 
   .site-header .header-nav .header-link::after {
