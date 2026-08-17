@@ -1,9 +1,10 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { LightboxPhoto } from "./gallery-lightbox-overlay";
+import { restoreLightboxOrigin } from "./lightbox-close";
 import { ResponsiveGalleryImage } from "./responsive-gallery-image";
 
 const GalleryLightboxOverlay = dynamic(
@@ -40,10 +41,16 @@ export function PublicGalleryMosaic({
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const returnFocusRef = useRef<HTMLButtonElement | null>(null);
+  const returnScrollRef = useRef(0);
+
+  useEffect(() => {
+    if (index < 0 && returnFocusRef.current) {
+      restoreLightboxOrigin(returnScrollRef.current, returnFocusRef.current);
+    }
+  }, [index]);
 
   function closeLightbox(): void {
     setIndex(-1);
-    window.requestAnimationFrame(() => returnFocusRef.current?.focus());
   }
 
   async function loadMore(): Promise<void> {
@@ -93,6 +100,7 @@ export function PublicGalleryMosaic({
             onFocus={preloadLightbox}
             onClick={(event) => {
               returnFocusRef.current = event.currentTarget;
+              returnScrollRef.current = window.scrollY;
               setIndex(photoIndex);
             }}
             aria-label={`Open ${photo.alt} in gallery`}

@@ -20,6 +20,7 @@ const [
   contactForm,
   bookingForm,
   lightbox,
+  lightboxClose,
   publicMosaic,
   galleryGrid,
   assetManager,
@@ -37,6 +38,7 @@ const [
   read("src/components/contact-form.tsx"),
   read("src/components/booking-form.tsx"),
   read("src/components/gallery-lightbox-overlay.tsx"),
+  read("src/components/lightbox-close.ts"),
   read("src/components/public-gallery-mosaic.tsx"),
   read("src/components/gallery-lightbox.tsx"),
   read("src/components/admin-asset-manager.tsx"),
@@ -57,8 +59,9 @@ excludesAll(styles, [".mobile-menu-", ".header-nav-desktop"], "mobile CSS");
 includesAll(contactForm, ["<label", 'type="tel"', 'autoComplete="email"', 'role="alert"'], "contact form accessibility");
 includesAll(bookingForm, ["<label", 'type="tel"', 'inputMode="numeric"', 'role="alert"'], "booking form accessibility");
 includesAll(lightbox, ["isMobile", "closeOnPullDown", "useReducedMotion", "hidden: isMobile"], "mobile lightbox");
-includesAll(publicMosaic, ["returnFocusRef", "requestAnimationFrame"], "public lightbox focus return");
-includesAll(galleryGrid, ["returnFocusRef", "requestAnimationFrame"], "private lightbox focus return");
+includesAll(lightboxClose, ["requestAnimationFrame", "scrollTo", 'behavior: "instant"', "preventScroll: true"], "lightbox viewport return");
+includesAll(publicMosaic, ["returnFocusRef", "returnScrollRef", "restoreLightboxOrigin"], "public lightbox focus return");
+includesAll(galleryGrid, ["returnFocusRef", "returnScrollRef", "restoreLightboxOrigin"], "private lightbox focus return");
 includesAll(assetManager, [">Earlier</button>", ">Later</button>", "event.altKey", 'event.key !== "ArrowUp"', "Delete permanently", "Move to Bin"], "admin touch and keyboard controls");
 includesAll(assetUpload, ["MAX_PARALLEL_PHOTO_UPLOADS", "withUploadRetries", "beforeunload", "Pause Uploads", "HEIC/HEIF", "findUploadCheckpoint"], "resumable photo upload");
 includesAll(archiveUpload, ["MAX_PARALLEL_MULTIPART_PARTS", "multipart/part-url", "multipart/complete", "Pause Upload", "Cancel & Discard Parts", "findUploadCheckpoint"], "resumable archive upload");

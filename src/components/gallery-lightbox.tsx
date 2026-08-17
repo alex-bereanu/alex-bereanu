@@ -5,6 +5,7 @@ import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react"
 import PhotoAlbum, { type Photo } from "react-photo-album";
 
 import type { LightboxPhoto } from "./gallery-lightbox-overlay";
+import { restoreLightboxOrigin } from "./lightbox-close";
 import { ResponsiveGalleryImage } from "./responsive-gallery-image";
 import { ClientPhotoActions } from "./client-photo-actions";
 
@@ -69,6 +70,7 @@ export function GalleryLightbox({
   const [loadError, setLoadError] = useState<string | null>(null);
   const revealTargetRef = useRef<HTMLDivElement | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  const returnScrollRef = useRef(0);
   const resolvedInitialCount = initialCount ?? photos.length;
   const [visibleCount, setVisibleCount] = useState(() =>
     revealOnScroll ? Math.min(resolvedInitialCount, photos.length) : photos.length,
@@ -90,6 +92,12 @@ export function GalleryLightbox({
     observer.observe(target);
     return () => observer.disconnect();
   }, [batchSize, photos.length, revealOnScroll, visibleCount]);
+
+  useEffect(() => {
+    if (index < 0 && returnFocusRef.current) {
+      restoreLightboxOrigin(returnScrollRef.current, returnFocusRef.current);
+    }
+  }, [index]);
 
   async function loadMore(): Promise<void> {
     if (!loadMoreUrl || !nextCursor || isLoadingMore) return;
@@ -144,12 +152,12 @@ export function GalleryLightbox({
 
   function openLightbox(clickedIndex: number, trigger: EventTarget | null): void {
     returnFocusRef.current = trigger instanceof HTMLElement ? trigger : document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    returnScrollRef.current = window.scrollY;
     setIndex(clickedIndex);
   }
 
   function closeLightbox(): void {
     setIndex(-1);
-    window.requestAnimationFrame(() => returnFocusRef.current?.focus());
   }
 
   if (photoAlbumItems.length === 0) {
