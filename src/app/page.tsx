@@ -43,7 +43,7 @@ export default async function Home() {
 
       <main className="mx-auto flex w-full max-w-6xl flex-col gap-20 px-4 py-20 sm:px-6 lg:px-8">
         <h1 className="sr-only">{chrome.brandName} Photography</h1>
-        <section id="about" className="grid scroll-mt-28 gap-6 lg:grid-cols-2">
+        <section id="about" className="grid scroll-mt-4 gap-6 sm:scroll-mt-28 lg:grid-cols-2">
           <div className="space-y-4">
             <h2 className="editorial-heading text-4xl">{aboutContent.title}</h2>
             <p className="whitespace-pre-wrap text-justify text-sm text-neutral-700">
