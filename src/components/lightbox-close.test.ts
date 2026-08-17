@@ -106,3 +106,51 @@ test("restores the gallery viewport before returning focus without another scrol
     }
   }
 });
+
+test("restores the gallery viewport without returning focus after pointer activation", () => {
+  const originalWindow = globalThis.window;
+  const events: unknown[] = [];
+  const animationFrames: FrameRequestCallback[] = [];
+
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      requestAnimationFrame(callback: FrameRequestCallback) {
+        animationFrames.push(callback);
+        return animationFrames.length;
+      },
+      scrollTo(options: ScrollToOptions) {
+        events.push(["scroll", options]);
+      },
+    },
+  });
+
+  try {
+    const target = {
+      focus(options?: FocusOptions) {
+        events.push(["focus", options]);
+      },
+      blur() {
+        events.push(["blur"]);
+      },
+    } as HTMLElement;
+
+    restoreLightboxOrigin(1800, target, false);
+    animationFrames.shift()?.(0);
+    animationFrames.shift()?.(0);
+
+    assert.deepEqual(events, [
+      ["scroll", { top: 1800, behavior: "instant" }],
+      ["blur"],
+    ]);
+  } finally {
+    if (originalWindow) {
+      Object.defineProperty(globalThis, "window", {
+        configurable: true,
+        value: originalWindow,
+      });
+    } else {
+      delete (globalThis as { window?: Window }).window;
+    }
+  }
+});

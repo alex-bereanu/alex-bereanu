@@ -42,11 +42,16 @@ export function PublicGalleryMosaic({
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const returnFocusRef = useRef<HTMLButtonElement | null>(null);
+  const returnFocusEnabledRef = useRef(false);
   const returnScrollRef = useRef(0);
 
   useEffect(() => {
     if (index < 0 && returnFocusRef.current) {
-      restoreLightboxOrigin(returnScrollRef.current, returnFocusRef.current);
+      restoreLightboxOrigin(
+        returnScrollRef.current,
+        returnFocusRef.current,
+        returnFocusEnabledRef.current,
+      );
     }
   }, [index]);
 
@@ -102,6 +107,7 @@ export function PublicGalleryMosaic({
             onClick={(event) => {
               const scrollY = window.scrollY;
               returnFocusRef.current = event.currentTarget;
+              returnFocusEnabledRef.current = event.detail === 0;
               returnScrollRef.current = scrollY;
               setOriginScrollY(scrollY);
               setIndex(photoIndex);

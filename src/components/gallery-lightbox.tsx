@@ -71,6 +71,7 @@ export function GalleryLightbox({
   const [loadError, setLoadError] = useState<string | null>(null);
   const revealTargetRef = useRef<HTMLDivElement | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  const returnFocusEnabledRef = useRef(false);
   const returnScrollRef = useRef(0);
   const resolvedInitialCount = initialCount ?? photos.length;
   const [visibleCount, setVisibleCount] = useState(() =>
@@ -96,7 +97,11 @@ export function GalleryLightbox({
 
   useEffect(() => {
     if (index < 0 && returnFocusRef.current) {
-      restoreLightboxOrigin(returnScrollRef.current, returnFocusRef.current);
+      restoreLightboxOrigin(
+        returnScrollRef.current,
+        returnFocusRef.current,
+        returnFocusEnabledRef.current,
+      );
     }
   }, [index]);
 
@@ -151,9 +156,10 @@ export function GalleryLightbox({
     [visiblePhotos],
   );
 
-  function openLightbox(clickedIndex: number, trigger: EventTarget | null): void {
+  function openLightbox(clickedIndex: number, trigger: EventTarget | null, restoreFocus: boolean): void {
     const scrollY = window.scrollY;
     returnFocusRef.current = trigger instanceof HTMLElement ? trigger : document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    returnFocusEnabledRef.current = restoreFocus;
     returnScrollRef.current = scrollY;
     setOriginScrollY(scrollY);
     setIndex(clickedIndex);
@@ -211,7 +217,7 @@ export function GalleryLightbox({
               </div>
             ),
           }}
-          onClick={({ index: clickedIndex, event }) => openLightbox(clickedIndex, event.currentTarget)}
+          onClick={({ index: clickedIndex, event }) => openLightbox(clickedIndex, event.currentTarget, event.detail === 0)}
         />
       </div>
 

@@ -6,7 +6,7 @@ After a touch or pointer opens a gallery photo on mobile, closing the lightbox r
 
 ## Design
 
-Track whether the lightbox was opened through keyboard activation. Continue running the existing two-frame scroll restoration after every close, but pass the originating photo button back to the focus-restoration helper only for keyboard activation. Touch and mouse activation pass no focus target, so their close path restores the exact scroll position without creating a visible focus ring.
+Track whether the lightbox was opened through keyboard activation. Continue running the existing two-frame scroll restoration after every close. For keyboard activation, explicitly return focus to the originating photo button. For touch and mouse activation, explicitly blur that button after restoration because the lightbox library's portal independently returns focus to the opener during cleanup.
 
 Apply the same behavior to both gallery entry points:
 
@@ -21,7 +21,7 @@ Keyboard users continue to receive focus restoration and the existing visible fo
 
 ## Verification
 
-Add a regression test proving that the restoration helper still restores scroll while skipping focus when pointer activation is indicated. Run the focused test red then green, followed by lint, type checking, the existing mobile-experience verification, a production build, and a mobile browser reproduction covering both pointer and keyboard activation.
+Add a regression test proving that the restoration helper still restores scroll while clearing library-restored focus when pointer activation is indicated. Run the focused test red then green, followed by lint, type checking, the existing mobile-experience verification, a production build, and mobile browser reproduction of both gallery entry points. Retain the existing regression check for keyboard focus restoration.
 
 ## Deployment
 

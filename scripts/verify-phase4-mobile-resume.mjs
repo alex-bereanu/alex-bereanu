@@ -60,8 +60,8 @@ includesAll(contactForm, ["<label", 'type="tel"', 'autoComplete="email"', 'role=
 includesAll(bookingForm, ["<label", 'type="tel"', 'inputMode="numeric"', 'role="alert"'], "booking form accessibility");
 includesAll(lightbox, ["isMobile", "closeOnPullDown", "useReducedMotion", "hidden: isMobile", "preventDefaultWheelY: true", "noScroll={{ disabled: true }}", "originScrollY"], "mobile lightbox");
 includesAll(lightboxClose, ["requestAnimationFrame", "scrollTo", 'behavior: "instant"', "preventScroll: true", "scrollbarGutter", "body.style.overflowY"], "lightbox viewport return");
-includesAll(publicMosaic, ["returnFocusRef", "returnScrollRef", "restoreLightboxOrigin"], "public lightbox focus return");
-includesAll(galleryGrid, ["returnFocusRef", "returnScrollRef", "restoreLightboxOrigin"], "private lightbox focus return");
+includesAll(publicMosaic, ["returnFocusRef", "returnFocusEnabledRef", "returnScrollRef", "restoreLightboxOrigin", "event.detail === 0"], "public lightbox focus return");
+includesAll(galleryGrid, ["returnFocusRef", "returnFocusEnabledRef", "returnScrollRef", "restoreLightboxOrigin", "event.detail === 0"], "private lightbox focus return");
 includesAll(assetManager, [">Earlier</button>", ">Later</button>", "event.altKey", 'event.key !== "ArrowUp"', "Delete permanently", "Move to Bin"], "admin touch and keyboard controls");
 includesAll(assetUpload, ["MAX_PARALLEL_PHOTO_UPLOADS", "withUploadRetries", "beforeunload", "Pause Uploads", "HEIC/HEIF", "findUploadCheckpoint"], "resumable photo upload");
 includesAll(archiveUpload, ["MAX_PARALLEL_MULTIPART_PARTS", "multipart/part-url", "multipart/complete", "Pause Upload", "Cancel & Discard Parts", "findUploadCheckpoint"], "resumable archive upload");

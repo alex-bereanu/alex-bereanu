@@ -36,11 +36,16 @@ export function lockLightboxViewport(
 export function restoreLightboxOrigin(
   scrollY: number,
   target: HTMLElement | null,
+  restoreFocus = true,
 ): void {
   window.requestAnimationFrame(() => {
     window.requestAnimationFrame(() => {
       window.scrollTo({ top: scrollY, behavior: "instant" });
-      target?.focus({ preventScroll: true });
+      if (restoreFocus) {
+        target?.focus({ preventScroll: true });
+      } else {
+        target?.blur();
+      }
     });
   });
 }
