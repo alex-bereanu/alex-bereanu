@@ -66,6 +66,7 @@ export function GalleryLightbox({
   const [photos, setPhotos] = useState(initialPhotos);
   const [nextCursor, setNextCursor] = useState(initialNextCursor);
   const [index, setIndex] = useState(-1);
+  const [originScrollY, setOriginScrollY] = useState(0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const revealTargetRef = useRef<HTMLDivElement | null>(null);
@@ -151,8 +152,10 @@ export function GalleryLightbox({
   );
 
   function openLightbox(clickedIndex: number, trigger: EventTarget | null): void {
+    const scrollY = window.scrollY;
     returnFocusRef.current = trigger instanceof HTMLElement ? trigger : document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    returnScrollRef.current = window.scrollY;
+    returnScrollRef.current = scrollY;
+    setOriginScrollY(scrollY);
     setIndex(clickedIndex);
   }
 
@@ -236,7 +239,12 @@ export function GalleryLightbox({
       ) : null}
 
       {index >= 0 ? (
-        <GalleryLightboxOverlay photos={photos} index={index} onClose={closeLightbox} />
+        <GalleryLightboxOverlay
+          photos={photos}
+          index={index}
+          originScrollY={originScrollY}
+          onClose={closeLightbox}
+        />
       ) : null}
     </>
   );

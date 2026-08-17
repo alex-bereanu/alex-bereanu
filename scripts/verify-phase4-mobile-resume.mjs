@@ -58,8 +58,8 @@ includesAll(styles, ["overflow-x: clip", "env(safe-area-inset-top)", "@media (po
 excludesAll(styles, [".mobile-menu-", ".header-nav-desktop"], "mobile CSS");
 includesAll(contactForm, ["<label", 'type="tel"', 'autoComplete="email"', 'role="alert"'], "contact form accessibility");
 includesAll(bookingForm, ["<label", 'type="tel"', 'inputMode="numeric"', 'role="alert"'], "booking form accessibility");
-includesAll(lightbox, ["isMobile", "closeOnPullDown", "useReducedMotion", "hidden: isMobile"], "mobile lightbox");
-includesAll(lightboxClose, ["requestAnimationFrame", "scrollTo", 'behavior: "instant"', "preventScroll: true"], "lightbox viewport return");
+includesAll(lightbox, ["isMobile", "closeOnPullDown", "useReducedMotion", "hidden: isMobile", "preventDefaultWheelY: true", "noScroll={{ disabled: true }}", "originScrollY"], "mobile lightbox");
+includesAll(lightboxClose, ["requestAnimationFrame", "scrollTo", 'behavior: "instant"', "preventScroll: true", "scrollbarGutter", "body.style.overflowY"], "lightbox viewport return");
 includesAll(publicMosaic, ["returnFocusRef", "returnScrollRef", "restoreLightboxOrigin"], "public lightbox focus return");
 includesAll(galleryGrid, ["returnFocusRef", "returnScrollRef", "restoreLightboxOrigin"], "private lightbox focus return");
 includesAll(assetManager, [">Earlier</button>", ">Later</button>", "event.altKey", 'event.key !== "ArrowUp"', "Delete permanently", "Move to Bin"], "admin touch and keyboard controls");

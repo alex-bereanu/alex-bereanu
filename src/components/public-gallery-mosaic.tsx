@@ -38,6 +38,7 @@ export function PublicGalleryMosaic({
   const [photos, setPhotos] = useState(initialPhotos);
   const [nextCursor, setNextCursor] = useState(initialNextCursor);
   const [index, setIndex] = useState(-1);
+  const [originScrollY, setOriginScrollY] = useState(0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const returnFocusRef = useRef<HTMLButtonElement | null>(null);
@@ -99,8 +100,10 @@ export function PublicGalleryMosaic({
             onPointerEnter={preloadLightbox}
             onFocus={preloadLightbox}
             onClick={(event) => {
+              const scrollY = window.scrollY;
               returnFocusRef.current = event.currentTarget;
-              returnScrollRef.current = window.scrollY;
+              returnScrollRef.current = scrollY;
+              setOriginScrollY(scrollY);
               setIndex(photoIndex);
             }}
             aria-label={`Open ${photo.alt} in gallery`}
@@ -141,7 +144,12 @@ export function PublicGalleryMosaic({
       ) : null}
 
       {index >= 0 ? (
-        <GalleryLightboxOverlay photos={photos} index={index} onClose={closeLightbox} />
+        <GalleryLightboxOverlay
+          photos={photos}
+          index={index}
+          originScrollY={originScrollY}
+          onClose={closeLightbox}
+        />
       ) : null}
     </>
   );

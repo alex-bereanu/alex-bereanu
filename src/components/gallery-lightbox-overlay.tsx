@@ -6,7 +6,9 @@ import Thumbnails from "yet-another-react-lightbox/plugins/thumbnails";
 import Zoom from "yet-another-react-lightbox/plugins/zoom";
 import "yet-another-react-lightbox/styles.css";
 import "yet-another-react-lightbox/plugins/thumbnails.css";
+import { useEffect } from "react";
 
+import { lockLightboxViewport } from "./lightbox-close";
 import { useMobileImageVariant } from "./use-mobile-image-variant";
 import { useReducedMotion } from "./use-reduced-motion";
 
@@ -33,14 +35,21 @@ export type LightboxPhoto = {
 export function GalleryLightboxOverlay({
   photos,
   index,
+  originScrollY,
   onClose,
 }: {
   photos: LightboxPhoto[];
   index: number;
+  originScrollY: number;
   onClose: () => void;
 }) {
   const isMobile = useMobileImageVariant();
   const reducedMotion = useReducedMotion();
+  useEffect(
+    () => lockLightboxViewport(document.documentElement, document.body, originScrollY),
+    [originScrollY],
+  );
+
   const hasDownloads = photos.some((photo) => photo.downloadHref);
   const plugins = isMobile
     ? hasDownloads ? [Zoom, Download] : [Zoom]
@@ -66,12 +75,18 @@ export function GalleryLightboxOverlay({
       index={index}
       open
       close={onClose}
+      noScroll={{ disabled: true }}
       slides={slides}
       plugins={plugins}
       thumbnails={{ showToggle: false, hidden: isMobile }}
       animation={reducedMotion ? { fade: 0, swipe: 0, navigation: 0 } : undefined}
       carousel={{ imageFit: "contain", preload: isMobile ? 1 : 2 }}
-      controller={{ closeOnBackdropClick: true, closeOnPullDown: isMobile, closeOnPullUp: isMobile }}
+      controller={{
+        closeOnBackdropClick: true,
+        closeOnPullDown: isMobile,
+        closeOnPullUp: isMobile,
+        preventDefaultWheelY: true,
+      }}
     />
   );
 }
