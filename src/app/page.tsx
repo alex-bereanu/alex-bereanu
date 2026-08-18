@@ -66,7 +66,7 @@ export default async function Home() {
         </section>
 
         <section id="contact" className="scroll-mt-4 space-y-5 sm:scroll-mt-28">
-          <h2 className="editorial-heading text-4xl">{contactContent.title}</h2>
+          <h2 className="editorial-heading text-4xl">Contact</h2>
           {contactContent.body ? <p className="whitespace-pre-wrap text-sm text-neutral-700">{contactContent.body}</p> : null}
           <ContactForm csrfToken={csrfToken} turnstileSiteKey={env.NEXT_PUBLIC_TURNSTILE_SITE_KEY} />
         </section>

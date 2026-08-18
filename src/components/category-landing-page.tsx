@@ -115,7 +115,7 @@ export async function CategoryLandingPage({
   const resolvedTitle = content.title || title;
   const resolvedEyebrow = content.subtitle ?? eyebrow;
   const resolvedDescription = content.body || description;
-  const resolvedInquiryTitle = content.ctaTitle ?? inquiryTitle ?? inquiryLabel;
+  const resolvedInquiryTitle = inquiryType === "contact" ? "Contact" : content.ctaTitle ?? inquiryTitle ?? inquiryLabel;
   const resolvedInquiryDescription =
     content.ctaBody ??
     inquiryDescription ??
